@@ -316,12 +316,19 @@ class SkyPhase {
   final List<double> gradientStops;
   final double starOpacity;
   final bool isDay;
+  // প্রকৃত চাঁদের দশা — moonIllumination: ০ (অমাবস্যা) .. ১ (পূর্ণিমা)
+  final double moonIllumination;
+  final bool moonWaxing; // true = শুক্লপক্ষ (বাড়ছে), false = কৃষ্ণপক্ষ (কমছে)
+  final bool isAmavasya; // আজ প্রায় অমাবস্যা — রাতের আকাশ পুরো কালো দেখাবে
 
   const SkyPhase({
     required this.gradientColors,
     required this.gradientStops,
     required this.starOpacity,
     required this.isDay,
+    required this.moonIllumination,
+    required this.moonWaxing,
+    required this.isAmavasya,
   });
 
   // মহাকাশ থেকে দেখা আকাশ: উপরের দিক সবসময় গভীর অন্ধকার মহাশূন্য,
@@ -329,6 +336,11 @@ class SkyPhase {
   // এতে ব্রহ্মাণ্ডের চেহারা দিনে-রাতে সবসময় বজায় থাকে।
   static const List<Color> _night = [
     Color(0xFF01030A), Color(0xFF050D1E), Color(0xFF071228), Color(0xFF03060F),
+  ];
+  // অমাবস্যার রাত — চাঁদের আলো একদমই নেই বলে বাস্তবে আকাশ সবচেয়ে গাঢ়/কালো
+  // দেখায়, শুধু তারাগুলো ফুটে থাকে
+  static const List<Color> _amavasyaNight = [
+    Color(0xFF000000), Color(0xFF010103), Color(0xFF020208), Color(0xFF000000),
   ];
   static const List<Color> _dawnDusk = [
     Color(0xFF030718), Color(0xFF0B1430), Color(0xFF4A2F5E), Color(0xFF10142A),
@@ -357,6 +369,17 @@ class SkyPhase {
     final nowMarked =
         now.toUtc().add(const Duration(hours: 5, minutes: 30));
 
+    // --- প্রকৃত চাঁদের দশা (real-time) ---
+    // moonAgeDays: ০ = অমাবস্যা মুহূর্ত, ~১৪.৭৭ = পূর্ণিমা, ~২৯.৫৩ = পরের অমাবস্যা
+    const synodic = 29.530588853;
+    final moonAge = PanchangCalculator.moonAgeDays(now) % synodic;
+    final phaseAngle = moonAge / synodic * 2 * math.pi;
+    final moonIllumination = (1 - math.cos(phaseAngle)) / 2; // ০..১
+    final moonWaxing = moonAge < synodic / 2;
+    // অমাবস্যার ~১ দিনের মধ্যে থাকলে "আজ অমাবস্যা" ধরা হচ্ছে
+    final isAmavasya = moonAge < 1.0 || moonAge > synodic - 1.0;
+    final nightColors = isAmavasya ? _amavasyaNight : _night;
+
     if (nowMarked.isAfter(sunrise) && nowMarked.isBefore(sunset)) {
       // --- দিন ---
       final total = sunset.difference(sunrise).inSeconds;
@@ -381,6 +404,9 @@ class SkyPhase {
         gradientStops: _stops,
         starOpacity: 0.55,
         isDay: true,
+        moonIllumination: moonIllumination,
+        moonWaxing: moonWaxing,
+        isAmavasya: isAmavasya,
       );
     }
 
@@ -414,13 +440,13 @@ class SkyPhase {
       colors = _lerpColors(_sunriseSunset, _dawnDusk, p / 0.08);
       starOpacity = 0.55 + p / 0.08 * 0.30;
     } else if (p < 0.22) {
-      colors = _lerpColors(_dawnDusk, _night, (p - 0.08) / 0.14);
+      colors = _lerpColors(_dawnDusk, nightColors, (p - 0.08) / 0.14);
       starOpacity = 0.85 + (p - 0.08) / 0.14 * 0.15;
     } else if (p < 0.78) {
-      colors = _night;
+      colors = nightColors;
       starOpacity = 1.0;
     } else if (p < 0.92) {
-      colors = _lerpColors(_night, _dawnDusk, (p - 0.78) / 0.14);
+      colors = _lerpColors(nightColors, _dawnDusk, (p - 0.78) / 0.14);
       starOpacity = 1.0 - (p - 0.78) / 0.14 * 0.15;
     } else {
       colors = _lerpColors(_dawnDusk, _sunriseSunset, (p - 0.92) / 0.08);
@@ -432,6 +458,9 @@ class SkyPhase {
       gradientStops: _stops,
       starOpacity: starOpacity.clamp(0.0, 1.0),
       isDay: false,
+      moonIllumination: moonIllumination,
+      moonWaxing: moonWaxing,
+      isAmavasya: isAmavasya,
     );
   }
 }
@@ -445,10 +474,13 @@ class CosmicBackground extends StatefulWidget {
 }
 
 class _CosmicBackgroundState extends State<CosmicBackground>
-    with SingleTickerProviderStateMixin, RouteAware {
+    with TickerProviderStateMixin, RouteAware {
   late final AnimationController _orbitController;
+  // পুরো অ্যাপের ব্যাকগ্রাউন্ডে লাইভ বৃষ্টির অ্যানিমেশনের জন্য আলাদা কন্ট্রোলার
+  late final AnimationController _rainController;
   Timer? _clockTimer;
   SkyPhase _phase = SkyPhase.forTime(DateTime.now());
+  bool _isRaining = false;
 
   @override
   void initState() {
@@ -457,13 +489,41 @@ class _CosmicBackgroundState extends State<CosmicBackground>
       vsync: this,
       duration: const Duration(seconds: 16),
     );
+    _rainController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    );
     // সেটিংসে 'Live Sky Animation' বন্ধ থাকলে গ্রহ ঘোরে না
     if (AppSettings.instance.skyAnim) _orbitController.repeat();
     _refreshPhase();
-    // প্রতি মিনিটে আকাশের রং/সূর্য-চাঁদের অবস্থান রিয়েল টাইমে আপডেট হবে
+    // নির্বাচিত জেলায় সত্যিই এখন বৃষ্টি হচ্ছে কিনা — লাইভ, লোকেশন-ভিত্তিক
+    _isRaining = WeatherService.instance.isRaining;
+    _syncRainAnim();
+    WeatherService.instance.addListener(_onWeatherChanged);
+    WeatherService.instance.refresh();
+    // প্রতি মিনিটে আকাশের রং/সূর্য-চাঁদের অবস্থান রিয়েল টাইমে আপডেট হবে;
+    // WeatherService নিজে ১৫ মিনিটের বেশি পুরনো না হলে আবার কল করে না, তাই
+    // এখানে refresh() ডাকলেও বাড়তি নেটওয়ার্ক লোড হয় না
     _clockTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       _refreshPhase();
+      WeatherService.instance.refresh();
     });
+  }
+
+  void _onWeatherChanged() {
+    if (!mounted) return;
+    setState(() {
+      _isRaining = WeatherService.instance.isRaining;
+      _syncRainAnim();
+    });
+  }
+
+  void _syncRainAnim() {
+    if (_isRaining && AppSettings.instance.skyAnim) {
+      if (!_rainController.isAnimating) _rainController.repeat();
+    } else {
+      _rainController.stop();
+    }
   }
 
   void _refreshPhase() {
@@ -486,6 +546,7 @@ class _CosmicBackgroundState extends State<CosmicBackground>
   @override
   void didPush() {
     if (AppSettings.instance.skyAnim) _orbitController.repeat();
+    _syncRainAnim();
   }
 
   @override
@@ -496,17 +557,22 @@ class _CosmicBackgroundState extends State<CosmicBackground>
       _orbitController.stop();
     }
     _refreshPhase();
+    WeatherService.instance.refresh();
+    _syncRainAnim();
   }
 
   @override
   void didPushNext() {
     _orbitController.stop();
+    _rainController.stop();
   }
 
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
     _orbitController.dispose();
+    _rainController.dispose();
+    WeatherService.instance.removeListener(_onWeatherChanged);
     _clockTimer?.cancel();
     super.dispose();
   }
@@ -628,6 +694,56 @@ class _CosmicBackgroundState extends State<CosmicBackground>
               ),
             ),
           ),
+          // ---- চাঁদ: প্রকৃত আজকের দশা (শুক্ল/কৃষ্ণপক্ষ) অনুযায়ী আলোকিত অংশ
+          // বদলায় — অমাবস্যায় প্রায় অদৃশ্য, পূর্ণিমায় সম্পূর্ণ গোলাকার
+          Positioned(
+            top: 70,
+            left: -34,
+            child: SizedBox(
+              width: 130,
+              height: 130,
+              child: CustomPaint(
+                painter: _MoonPhasePainter(
+                  illumination: _phase.moonIllumination,
+                  waxing: _phase.moonWaxing,
+                ),
+              ),
+            ),
+          ),
+          // ---- লাইভ আবহাওয়া: এখন সত্যিই বৃষ্টি হলে সারা অ্যাপের ব্যাকগ্রাউন্ডে
+          // মেঘলা আভা + বৃষ্টির অ্যানিমেশন — নির্বাচিত জেলার real-time ডেটা
+          // অনুযায়ী (Open-Meteo)। IgnorePointer দেওয়া আছে যাতে বোতাম/স্ক্রল
+          // চাপতে কোনো সমস্যা না হয়।
+          IgnorePointer(
+            child: AnimatedOpacity(
+              duration: const Duration(seconds: 2),
+              opacity: _isRaining ? 1.0 : 0.0,
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x552A3446), Color(0x2E10161F)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          IgnorePointer(
+            child: AnimatedOpacity(
+              duration: const Duration(seconds: 2),
+              opacity: _isRaining ? 1.0 : 0.0,
+              child: AnimatedBuilder(
+                animation: _rainController,
+                builder: (context, _) {
+                  return CustomPaint(
+                    painter: _CosmicRainOverlayPainter(_rainController.value),
+                    size: Size.infinite,
+                  );
+                },
+              ),
+            ),
+          ),
           SafeArea(child: widget.child),
         ],
       ),
@@ -701,6 +817,111 @@ class _CosmicBackgroundState extends State<CosmicBackground>
       ],
     );
   }
+}
+
+/// সারা অ্যাপের ব্যাকগ্রাউন্ডে বৃষ্টির অ্যানিমেশন — নির্বাচিত জেলায় লাইভ
+/// আবহাওয়া (Open-Meteo) সত্যিই বৃষ্টি দেখালে তবেই আঁকা হয়।
+class _CosmicRainOverlayPainter extends CustomPainter {
+  _CosmicRainOverlayPainter(this.rainT);
+  final double rainT;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final rainPaint = Paint()
+      ..color = Colors.lightBlueAccent.withValues(alpha: 0.32)
+      ..strokeWidth = 1.3
+      ..strokeCap = StrokeCap.round;
+    final rnd = math.Random(101);
+    for (int i = 0; i < 140; i++) {
+      final baseX = rnd.nextDouble() * (w + 120) - 60;
+      final speedFactor = 0.7 + rnd.nextDouble() * 0.9;
+      final y0 = ((rainT * speedFactor + rnd.nextDouble()) % 1.0) * h;
+      final x0 = baseX + y0 * 0.18;
+      canvas.drawLine(Offset(x0, y0), Offset(x0 - 7, y0 + 18), rainPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CosmicRainOverlayPainter old) =>
+      old.rainT != rainT;
+}
+
+/// আজকের প্রকৃত চাঁদের দশা এঁকে দেখায় — অমাবস্যায় প্রায় পুরো অন্ধকার
+/// (শুধু ম্লান earthshine), পূর্ণিমায় সম্পূর্ণ আলোকিত গোলক, আর মাঝের
+/// দিনগুলোতে সঠিক অনুপাতে কাস্তে/অর্ধেক/উঁচানো চাঁদ (waxing = ডানদিক
+/// আলোকিত ও বাড়ছে — শুক্লপক্ষ; waning = বাঁদিক আলোকিত ও কমছে — কৃষ্ণপক্ষ)।
+class _MoonPhasePainter extends CustomPainter {
+  _MoonPhasePainter({required this.illumination, required this.waxing});
+  final double illumination; // ০ (অমাবস্যা) .. ১ (পূর্ণিমা)
+  final bool waxing;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final r = size.shortestSide / 2 * 0.62;
+
+    // ম্লান আভা (glow) — পূর্ণিমার কাছাকাছি সবচেয়ে উজ্জ্বল
+    final glowPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.28 * illumination + 0.04),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+      ).createShader(Rect.fromCircle(center: center, radius: r * 1.9));
+    canvas.drawCircle(center, r * 1.9, glowPaint);
+
+    // অন্ধকার/অনালোকিত অংশ — earthshine-এর মতো খুব ম্লান ধূসর, একদমই
+    // কালো নয় (বাস্তবেও অমাবস্যার সময় চাঁদের আভাস বোঝা যায়)
+    final darkPaint = Paint()..color = const Color(0xFF2A3040);
+    canvas.drawCircle(center, r, darkPaint);
+
+    // আলোকিত অংশ আঁকা — দুই অর্ধবৃত্ত/উপবৃত্তের combine দিয়ে বাস্তব দশা
+    final k = illumination.clamp(0.0, 1.0);
+    if (k > 0.005) {
+      final rightLit = waxing;
+      final circleRect = Rect.fromCircle(center: center, radius: r);
+      final halfPath = Path();
+      if (rightLit) {
+        halfPath.addArc(circleRect, -math.pi / 2, math.pi);
+      } else {
+        halfPath.addArc(circleRect, math.pi / 2, math.pi);
+      }
+      halfPath.close();
+
+      Path litPath;
+      if (k <= 0.5) {
+        final rx = r * (1 - 2 * k);
+        final ellipse = Path()
+          ..addOval(Rect.fromCenter(center: center, width: rx * 2, height: r * 2));
+        litPath = Path.combine(PathOperation.difference, halfPath, ellipse);
+      } else {
+        final rx = r * (2 * k - 1);
+        final ellipse = Path()
+          ..addOval(Rect.fromCenter(center: center, width: rx * 2, height: r * 2));
+        litPath = Path.combine(PathOperation.union, halfPath, ellipse);
+      }
+
+      final litPaint = Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(-0.2, -0.2),
+          colors: const [Color(0xFFFFFDF5), Color(0xFFEFE6C8), Color(0xFFC9BE9E)],
+          stops: const [0.0, 0.55, 1.0],
+        ).createShader(circleRect);
+      canvas.drawPath(litPath, litPaint);
+    }
+
+    // হালকা crater টেক্সচার (শুধু আলোকিত অংশে বোঝা যায়, বাস্তবসম্মত ছোঁয়া)
+    final craterPaint = Paint()..color = Colors.black.withValues(alpha: 0.07);
+    canvas.drawCircle(center + Offset(r * 0.25, -r * 0.2), r * 0.14, craterPaint);
+    canvas.drawCircle(center + Offset(-r * 0.1, r * 0.28), r * 0.10, craterPaint);
+    canvas.drawCircle(center + Offset(r * 0.05, r * 0.02), r * 0.07, craterPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MoonPhasePainter old) =>
+      old.illumination != illumination || old.waxing != waxing;
 }
 
 // =====================================================================
