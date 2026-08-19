@@ -456,7 +456,7 @@ class _LocationSelectScreenState extends State<LocationSelectScreen> {
             Expanded(
               child: ListView.separated(
                 itemCount: _districts.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
                   final district = _districts[index];
                   final isSelected = district == _selectedDistrict;
@@ -662,7 +662,7 @@ class _ThemeSelectScreenState extends State<ThemeSelectScreen> {
             Expanded(
               child: ListView.separated(
                 itemCount: _themes.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
                   final theme = _themes[index];
                   final isSelected = index == _selectedIndex;
@@ -908,7 +908,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _festivals.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  separatorBuilder: (_, _) => const SizedBox(width: 10),
                   itemBuilder: (context, i) {
                     final f = _festivals[i];
                     return _FestivalCard(
@@ -1133,7 +1133,7 @@ class _LiveInfoRow extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (context, i) => Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 alignment: Alignment.center,

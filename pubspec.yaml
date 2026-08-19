@@ -34,6 +34,13 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+
+  # ডেটা সংরক্ষণ — রিমাইন্ডার, নোটস, সেটিংস, প্রোফাইল, জেলা
+  shared_preferences: ^2.3.3
+
+  # রিমাইন্ডারের জন্য সত্যিকারের নোটিফিকেশন
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- রিমাইন্ডারের নোটিফিকেশন দেখানোর জন্য (Android 13+ এ ব্যবহারকারীর অনুমতি লাগে) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- ফোন রিস্টার্ট হলেও সেট করা রিমাইন্ডার যেন বহাল থাকে -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
-        android:label="bangla_panjika_native"
+        android:label="বাংলা পঞ্জিকা"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -30,6 +34,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- নির্ধারিত সময়ে রিমাইন্ডার বাজানোর জন্য (flutter_local_notifications) -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false"/>
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

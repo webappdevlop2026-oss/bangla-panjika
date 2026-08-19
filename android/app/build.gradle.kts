@@ -10,6 +10,9 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications-এর জন্য দরকার: পুরনো Android ভার্সনেও
+        // নতুন Java তারিখ/সময়ের API চালানোর ব্যবস্থা (core library desugaring)
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -30,8 +33,15 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
         }
     }
+}
+
+dependencies {
+    // উপরের desugaring চালু রাখতে এই লাইব্রেরিটি লাগে
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 kotlin {
