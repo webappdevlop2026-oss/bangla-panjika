@@ -18,29 +18,98 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="বাংলা পঞ্জিকা — বাংলা ক্যালেন্ডার ও তিথি">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="bangla_panjika_native">
+  <meta name="apple-mobile-web-app-title" content="বাংলা পঞ্জিকা">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>bangla_panjika_native</title>
+  <title>বাংলা পঞ্জিকা</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* ডেস্কটপ/চওড়া স্ক্রিনে অ্যাপটাকে একটা ফোন-শেপ ফ্রেমে মাঝখানে দেখানোর
+       জন্য — আসল মোবাইলে (সরু স্ক্রিন) এটা কিছুই করে না, স্বাভাবিক full-screen
+       অ্যাপের মতোই চলে। */
+    html.phone-frame-mode, html.phone-frame-mode body {
+      height: 100%;
+      margin: 0;
+      background: radial-gradient(circle at 50% 20%, #16213e 0%, #060912 70%);
+      overflow: hidden;
+    }
+    html.phone-frame-mode body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: sans-serif;
+    }
+    .phone-frame-wrap {
+      width: 412px;
+      height: 890px;
+      max-height: 94vh;
+      border-radius: 42px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65), 0 0 0 2px rgba(255, 211, 110, 0.15);
+      border: 10px solid #111417;
+      background: #000;
+      position: relative;
+    }
+    .phone-frame-wrap::before {
+      /* উপরের নচ/স্পিকার বার — বাস্তব ফোনের মতো দেখতে */
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 140px;
+      height: 22px;
+      background: #111417;
+      border-bottom-left-radius: 14px;
+      border-bottom-right-radius: 14px;
+      z-index: 2;
+    }
+    .phone-frame-wrap iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+    }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <div id="app-root"></div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var isEmbed = params.get('embed') === '1';
+      var isWide = window.innerWidth > 640;
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
-  <script src="flutter_bootstrap.js" async></script>
+      if (isWide && !isEmbed) {
+        // ডেস্কটপ/চওড়া স্ক্রিন — ফোন-ফ্রেমের ভেতরে iframe দিয়ে আসল অ্যাপ লোড
+        document.documentElement.classList.add('phone-frame-mode');
+        var wrap = document.createElement('div');
+        wrap.className = 'phone-frame-wrap';
+        var iframe = document.createElement('iframe');
+        var qs = new URLSearchParams(location.search);
+        qs.set('embed', '1');
+        iframe.src = location.pathname + '?' + qs.toString() + (location.hash || '');
+        wrap.appendChild(iframe);
+        document.getElementById('app-root').appendChild(wrap);
+      } else {
+        // মোবাইল স্ক্রিন (বা ফ্রেমের ভেতরের iframe) — স্বাভাবিকভাবে
+        // পুরো স্ক্রিন জুড়ে Flutter অ্যাপ লোড হবে
+        var s = document.createElement('script');
+        s.src = 'flutter_bootstrap.js';
+        s.async = true;
+        document.body.appendChild(s);
+      }
+    })();
+  </script>
 </body>
 </html>
