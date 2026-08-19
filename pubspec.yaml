@@ -41,6 +41,9 @@ dependencies:
   # রিমাইন্ডারের জন্য সত্যিকারের নোটিফিকেশন
   flutter_local_notifications: ^18.0.1
   timezone: ^0.9.4
+
+  # লাইভ আবহাওয়া (বৃষ্টি হচ্ছে কিনা) — Open-Meteo, ফ্রি, কোনো key লাগে না
+  http: ^1.2.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
@@ -1664,6 +1665,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               ),
               const SizedBox(height: 16),
               _HeroDateCard(),
+              const SizedBox(height: 12),
+              const _HistoryBanner(),
               const SizedBox(height: 14),
               _LiveInfoRow(),
               const SizedBox(height: 14),
@@ -1777,6 +1780,13 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   ],
                 ],
               ),
+              const SizedBox(height: 20),
+              const _SectionTitle('গ্রামের আকাশ (লাইভ)'),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: const VillageHorizonScene(),
+              ),
               const SizedBox(height: 10),
             ],
           ),
@@ -1861,6 +1871,297 @@ class _SectionTitle extends StatelessWidget {
         fontSize: 18,
         fontWeight: FontWeight.w700,
         color: Colors.white,
+      ),
+    );
+  }
+}
+
+// =====================================================================
+// আজকের ইতিহাস — উল্লেখযোগ্য বাঙালি/ভারতীয় ব্যক্তিত্বদের জন্ম/মৃত্যু
+// তারিখ (Wikipedia থেকে যাচাই করা, ইংরেজি ক্যালেন্ডারের তারিখ অনুযায়ী)
+// =====================================================================
+
+class _HistoricalFigure {
+  final int month;
+  final int day;
+  final String name;
+  final String role;
+  final String eventType; // 'জন্ম' বা 'প্রয়াণ'
+  final String emoji;
+  const _HistoricalFigure(
+    this.month,
+    this.day,
+    this.name,
+    this.role,
+    this.eventType,
+    this.emoji,
+  );
+}
+
+const List<_HistoricalFigure> _historicalFigures = [
+  _HistoricalFigure(5, 7, 'রবীন্দ্রনাথ ঠাকুর', 'কবি ও সাহিত্যিক (নোবেলজয়ী)', 'জন্ম', '📖'),
+  _HistoricalFigure(8, 7, 'রবীন্দ্রনাথ ঠাকুর', 'কবি ও সাহিত্যিক (নোবেলজয়ী)', 'প্রয়াণ', '📖'),
+  _HistoricalFigure(5, 25, 'কাজী নজরুল ইসলাম', 'বিদ্রোহী কবি', 'জন্ম', '✒️'),
+  _HistoricalFigure(8, 29, 'কাজী নজরুল ইসলাম', 'বিদ্রোহী কবি', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(1, 23, 'নেতাজি সুভাষচন্দ্র বসু', 'স্বাধীনতা সংগ্রামী', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(1, 12, 'স্বামী বিবেকানন্দ', 'সন্ন্যাসী ও দার্শনিক', 'জন্ম', '🕉'),
+  _HistoricalFigure(7, 4, 'স্বামী বিবেকানন্দ', 'সন্ন্যাসী ও দার্শনিক', 'প্রয়াণ', '🕉'),
+  _HistoricalFigure(9, 26, 'ঈশ্বরচন্দ্র বিদ্যাসাগর', 'সমাজ সংস্কারক', 'জন্ম', '📚'),
+  _HistoricalFigure(7, 29, 'ঈশ্বরচন্দ্র বিদ্যাসাগর', 'সমাজ সংস্কারক', 'প্রয়াণ', '📚'),
+  _HistoricalFigure(6, 26, 'বঙ্কিমচন্দ্র চট্টোপাধ্যায়', 'সাহিত্যিক', 'জন্ম', '🖋'),
+  _HistoricalFigure(4, 8, 'বঙ্কিমচন্দ্র চট্টোপাধ্যায়', 'সাহিত্যিক', 'প্রয়াণ', '🖋'),
+  _HistoricalFigure(9, 15, 'শরৎচন্দ্র চট্টোপাধ্যায়', 'সাহিত্যিক', 'জন্ম', '🖋'),
+  _HistoricalFigure(1, 16, 'শরৎচন্দ্র চট্টোপাধ্যায়', 'সাহিত্যিক', 'প্রয়াণ', '🖋'),
+  _HistoricalFigure(5, 2, 'সত্যজিৎ রায়', 'চলচ্চিত্র নির্মাতা', 'জন্ম', '🎬'),
+  _HistoricalFigure(4, 23, 'সত্যজিৎ রায়', 'চলচ্চিত্র নির্মাতা', 'প্রয়াণ', '🎬'),
+  _HistoricalFigure(11, 30, 'জগদীশচন্দ্র বসু', 'বিজ্ঞানী', 'জন্ম', '🔬'),
+  _HistoricalFigure(11, 23, 'জগদীশচন্দ্র বসু', 'বিজ্ঞানী', 'প্রয়াণ', '🔬'),
+  _HistoricalFigure(10, 6, 'মেঘনাদ সাহা', 'বিজ্ঞানী', 'জন্ম', '🔬'),
+  _HistoricalFigure(2, 16, 'মেঘনাদ সাহা', 'বিজ্ঞানী', 'প্রয়াণ', '🔬'),
+  _HistoricalFigure(5, 22, 'রাজা রামমোহন রায়', 'সমাজ সংস্কারক', 'জন্ম', '📜'),
+  _HistoricalFigure(9, 27, 'রাজা রামমোহন রায়', 'সমাজ সংস্কারক', 'প্রয়াণ', '📜'),
+  _HistoricalFigure(10, 2, 'মহাত্মা গান্ধী', 'জাতির জনক', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(1, 30, 'মহাত্মা গান্ধী', 'জাতির জনক', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(10, 15, 'এ.পি.জে. আব্দুল কালাম', 'বিজ্ঞানী ও রাষ্ট্রপতি', 'জন্ম', '🚀'),
+  _HistoricalFigure(7, 27, 'এ.পি.জে. আব্দুল কালাম', 'বিজ্ঞানী ও রাষ্ট্রপতি', 'প্রয়াণ', '🚀'),
+  _HistoricalFigure(2, 18, 'শ্রীরামকৃষ্ণ পরমহংস', 'সন্ন্যাসী', 'জন্ম', '🕉'),
+  _HistoricalFigure(8, 16, 'শ্রীরামকৃষ্ণ পরমহংস', 'সন্ন্যাসী', 'প্রয়াণ', '🕉'),
+  _HistoricalFigure(10, 28, 'ভগিনী নিবেদিতা', 'সমাজসেবী', 'জন্ম', '🤍'),
+  _HistoricalFigure(10, 13, 'ভগিনী নিবেদিতা', 'সমাজসেবী', 'প্রয়াণ', '🤍'),
+  _HistoricalFigure(1, 25, 'মাইকেল মধুসূদন দত্ত', 'কবি', 'জন্ম', '✒️'),
+  _HistoricalFigure(6, 29, 'মাইকেল মধুসূদন দত্ত', 'কবি', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(9, 28, 'রানি রাসমণি', 'সমাজসেবী', 'জন্ম', '🏛'),
+  _HistoricalFigure(2, 19, 'রানি রাসমণি', 'সমাজসেবী', 'প্রয়াণ', '🏛'),
+  _HistoricalFigure(11, 5, 'দেশবন্ধু চিত্তরঞ্জন দাশ', 'রাজনীতিবিদ', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(6, 16, 'দেশবন্ধু চিত্তরঞ্জন দাশ', 'রাজনীতিবিদ', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(12, 3, 'ক্ষুদিরাম বসু', 'বিপ্লবী (ফাঁসি)', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(8, 11, 'ক্ষুদিরাম বসু', 'বিপ্লবী (ফাঁসি)', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(9, 29, 'মাতঙ্গিনী হাজরা', 'বিপ্লবী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(12, 9, 'বেগম রোকেয়া', 'সমাজ সংস্কারক', 'জন্ম', '📚'),
+  _HistoricalFigure(2, 17, 'জীবনানন্দ দাশ', 'কবি', 'জন্ম', '✒️'),
+  _HistoricalFigure(10, 22, 'জীবনানন্দ দাশ', 'কবি', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(8, 2, 'আচার্য প্রফুল্লচন্দ্র রায়', 'বিজ্ঞানী', 'জন্ম', '🔬'),
+  _HistoricalFigure(6, 16, 'আচার্য প্রফুল্লচন্দ্র রায়', 'বিজ্ঞানী', 'প্রয়াণ', '🔬'),
+  _HistoricalFigure(7, 1, 'ডা. বিধানচন্দ্র রায়', 'চিকিৎসক ও রাজনীতিবিদ', 'জন্ম ও প্রয়াণ', '⚕️'),
+  _HistoricalFigure(3, 22, 'মাস্টারদা সূর্য সেন', 'বিপ্লবী (ফাঁসি)', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(1, 12, 'মাস্টারদা সূর্য সেন', 'বিপ্লবী (ফাঁসি)', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(5, 5, 'প্রীতিলতা ওয়াদ্দেদার', 'বিপ্লবী', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(9, 24, 'প্রীতিলতা ওয়াদ্দেদার', 'বিপ্লবী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(7, 18, 'কাদম্বিনী গঙ্গোপাধ্যায়', 'প্রথম নারী চিকিৎসক', 'জন্ম', '⚕️'),
+  _HistoricalFigure(10, 3, 'কাদম্বিনী গঙ্গোপাধ্যায়', 'প্রথম নারী চিকিৎসক', 'প্রয়াণ', '⚕️'),
+  _HistoricalFigure(8, 26, 'মাদার টেরিজা', 'সমাজসেবী (কলকাতা)', 'জন্ম', '🤍'),
+  _HistoricalFigure(9, 5, 'মাদার টেরিজা', 'সমাজসেবী (কলকাতা)', 'প্রয়াণ', '🤍'),
+  _HistoricalFigure(8, 18, 'নেতাজি সুভাষচন্দ্র বসু', 'স্বাধীনতা সংগ্রামী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(11, 7, 'বিপিনচন্দ্র পাল', 'বিপ্লবী (লাল-বাল-পাল)', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(5, 20, 'বিপিনচন্দ্র পাল', 'বিপ্লবী (লাল-বাল-পাল)', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(7, 23, 'তারাশঙ্কর বন্দ্যোপাধ্যায়', 'সাহিত্যিক', 'জন্ম', '🖋'),
+  _HistoricalFigure(9, 14, 'তারাশঙ্কর বন্দ্যোপাধ্যায়', 'সাহিত্যিক', 'প্রয়াণ', '🖋'),
+  _HistoricalFigure(5, 19, 'মানিক বন্দ্যোপাধ্যায়', 'সাহিত্যিক', 'জন্ম', '🖋'),
+  _HistoricalFigure(12, 3, 'মানিক বন্দ্যোপাধ্যায়', 'সাহিত্যিক', 'প্রয়াণ', '🖋'),
+  _HistoricalFigure(9, 12, 'বিভূতিভূষণ বন্দ্যোপাধ্যায়', 'সাহিত্যিক (পথের পাঁচালী)', 'জন্ম', '🖋'),
+  _HistoricalFigure(11, 1, 'বিভূতিভূষণ বন্দ্যোপাধ্যায়', 'সাহিত্যিক (পথের পাঁচালী)', 'প্রয়াণ', '🖋'),
+  _HistoricalFigure(11, 4, 'ঋত্বিক ঘটক', 'চলচ্চিত্র নির্মাতা', 'জন্ম', '🎬'),
+  _HistoricalFigure(2, 6, 'ঋত্বিক ঘটক', 'চলচ্চিত্র নির্মাতা', 'প্রয়াণ', '🎬'),
+  _HistoricalFigure(5, 14, 'মৃণাল সেন', 'চলচ্চিত্র নির্মাতা', 'জন্ম', '🎬'),
+  _HistoricalFigure(12, 30, 'মৃণাল সেন', 'চলচ্চিত্র নির্মাতা', 'প্রয়াণ', '🎬'),
+  _HistoricalFigure(4, 7, 'পণ্ডিত রবিশঙ্কর', 'সেতার বাদক', 'জন্ম', '🎶'),
+  _HistoricalFigure(12, 11, 'পণ্ডিত রবিশঙ্কর', 'সেতার বাদক', 'প্রয়াণ', '🎶'),
+  _HistoricalFigure(9, 3, 'উত্তম কুমার', 'অভিনেতা (মহানায়ক)', 'জন্ম', '🎭'),
+  _HistoricalFigure(7, 24, 'উত্তম কুমার', 'অভিনেতা (মহানায়ক)', 'প্রয়াণ', '🎭'),
+  _HistoricalFigure(4, 6, 'সুচিত্রা সেন', 'অভিনেত্রী (মহানায়িকা)', 'জন্ম', '🎭'),
+  _HistoricalFigure(1, 17, 'সুচিত্রা সেন', 'অভিনেত্রী (মহানায়িকা)', 'প্রয়াণ', '🎭'),
+  _HistoricalFigure(6, 16, 'হেমন্ত মুখোপাধ্যায়', 'সঙ্গীতশিল্পী', 'জন্ম', '🎤'),
+  _HistoricalFigure(9, 26, 'হেমন্ত মুখোপাধ্যায়', 'সঙ্গীতশিল্পী', 'প্রয়াণ', '🎤'),
+  _HistoricalFigure(8, 4, 'কিশোর কুমার', 'সঙ্গীতশিল্পী ও অভিনেতা', 'জন্ম', '🎤'),
+  _HistoricalFigure(10, 13, 'কিশোর কুমার', 'সঙ্গীতশিল্পী ও অভিনেতা', 'প্রয়াণ', '🎤'),
+  _HistoricalFigure(5, 1, 'মান্না দে', 'সঙ্গীতশিল্পী', 'জন্ম', '🎤'),
+  _HistoricalFigure(10, 24, 'মান্না দে', 'সঙ্গীতশিল্পী', 'প্রয়াণ', '🎤'),
+  _HistoricalFigure(6, 29, 'স্যার আশুতোষ মুখোপাধ্যায়', 'শিক্ষাবিদ', 'জন্ম', '🎓'),
+  _HistoricalFigure(5, 25, 'স্যার আশুতোষ মুখোপাধ্যায়', 'শিক্ষাবিদ', 'প্রয়াণ', '🎓'),
+  _HistoricalFigure(9, 27, 'ভগৎ সিং', 'বিপ্লবী (ফাঁসি)', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(3, 23, 'ভগৎ সিং', 'বিপ্লবী (ফাঁসি)', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(11, 14, 'জওহরলাল নেহরু', 'ভারতের প্রথম প্রধানমন্ত্রী', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(5, 27, 'জওহরলাল নেহরু', 'ভারতের প্রথম প্রধানমন্ত্রী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(10, 31, 'সর্দার বল্লভভাই প্যাটেল', 'রাষ্ট্রনায়ক', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(12, 15, 'সর্দার বল্লভভাই প্যাটেল', 'রাষ্ট্রনায়ক', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(4, 14, 'ডঃ ভীমরাও আম্বেদকর', 'সংবিধান প্রণেতা', 'জন্ম', '⚖️'),
+  _HistoricalFigure(12, 6, 'ডঃ ভীমরাও আম্বেদকর', 'সংবিধান প্রণেতা', 'প্রয়াণ', '⚖️'),
+  _HistoricalFigure(10, 2, 'লাল বাহাদুর শাস্ত্রী', 'প্রধানমন্ত্রী', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(1, 11, 'লাল বাহাদুর শাস্ত্রী', 'প্রধানমন্ত্রী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(11, 19, 'ইন্দিরা গান্ধী', 'প্রধানমন্ত্রী', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(10, 31, 'ইন্দিরা গান্ধী', 'প্রধানমন্ত্রী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(8, 20, 'রাজীব গান্ধী', 'প্রধানমন্ত্রী', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(5, 21, 'রাজীব গান্ধী', 'প্রধানমন্ত্রী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(7, 23, 'চন্দ্রশেখর আজাদ', 'বিপ্লবী', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(2, 27, 'চন্দ্রশেখর আজাদ', 'বিপ্লবী', 'প্রয়াণ', '🇮🇳'),
+  _HistoricalFigure(11, 7, 'স্যার সি.ভি. রামন', 'পদার্থবিজ্ঞানী (নোবেলজয়ী)', 'জন্ম', '🔬'),
+  _HistoricalFigure(11, 21, 'স্যার সি.ভি. রামন', 'পদার্থবিজ্ঞানী (নোবেলজয়ী)', 'প্রয়াণ', '🔬'),
+  _HistoricalFigure(1, 1, 'সত্যেন্দ্রনাথ বসু', 'পদার্থবিজ্ঞানী', 'জন্ম', '🔬'),
+  _HistoricalFigure(2, 4, 'সত্যেন্দ্রনাথ বসু', 'পদার্থবিজ্ঞানী', 'প্রয়াণ', '🔬'),
+  _HistoricalFigure(10, 30, 'হোমি জাহাঙ্গীর ভাবা', 'পরমাণু বিজ্ঞানী', 'জন্ম', '⚛️'),
+  _HistoricalFigure(1, 24, 'হোমি জাহাঙ্গীর ভাবা', 'পরমাণু বিজ্ঞানী', 'প্রয়াণ', '⚛️'),
+  _HistoricalFigure(2, 13, 'সরোজিনী নাইডু', 'কবি ও স্বাধীনতা সংগ্রামী', 'জন্ম', '🌸'),
+  _HistoricalFigure(3, 2, 'সরোজিনী নাইডু', 'কবি ও স্বাধীনতা সংগ্রামী', 'প্রয়াণ', '🌸'),
+  _HistoricalFigure(8, 15, 'ঋষি অরবিন্দ', 'দার্শনিক ও যোগী', 'জন্ম', '🕉'),
+  _HistoricalFigure(12, 5, 'ঋষি অরবিন্দ', 'দার্শনিক ও যোগী', 'প্রয়াণ', '🕉'),
+  _HistoricalFigure(1, 14, 'মহাশ্বেতা দেবী', 'সাহিত্যিক ও সমাজকর্মী', 'জন্ম', '🖋'),
+  _HistoricalFigure(7, 28, 'মহাশ্বেতা দেবী', 'সাহিত্যিক ও সমাজকর্মী', 'প্রয়াণ', '🖋'),
+  _HistoricalFigure(9, 7, 'সুনীল গঙ্গোপাধ্যায়', 'কবি ও সাহিত্যিক', 'জন্ম', '🖋'),
+  _HistoricalFigure(10, 23, 'সুনীল গঙ্গোপাধ্যায়', 'কবি ও সাহিত্যিক', 'প্রয়াণ', '🖋'),
+  _HistoricalFigure(8, 19, 'সুধা মূর্তি', 'লেখিকা ও সমাজসেবী', 'জন্ম', '📖'),
+  _HistoricalFigure(8, 19, 'এস. সত্যমূর্তি', 'আইনজীবী ও রাজনীতিবিদ', 'জন্ম', '🇮🇳'),
+];
+
+class _HistoryBanner extends StatefulWidget {
+  const _HistoryBanner();
+  @override
+  State<_HistoryBanner> createState() => _HistoryBannerState();
+}
+
+class _HistoryBannerState extends State<_HistoryBanner> {
+  late final PageController _controller;
+  Timer? _timer;
+  List<_HistoricalFigure> _items = [];
+  bool _exactToday = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController(viewportFraction: 0.92);
+    _loadItems();
+    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || _items.isEmpty || !_controller.hasClients) return;
+      final next = (_controller.page ?? 0).round() + 1;
+      _controller.animateToPage(
+        next % _items.length,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  // শুধু আজকের প্রকৃত তারিখেই (দিন+মাস) যাদের জন্ম/মৃত্যুদিন পড়ে তারাই
+  // দেখাবে — প্রতিদিন আলাদা হবে, অন্য দিনের কাউকে "আজকের" বলে দেখানো হবে
+  // না। মিল না থাকলে ব্যানারটাই লুকানো থাকবে (নিচে _items.isEmpty চেক)।
+  void _loadItems() {
+    final now = DateTime.now();
+    _items = _historicalFigures
+        .where((f) => f.month == now.month && f.day == now.day)
+        .toList();
+    _exactToday = true;
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_items.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 92,
+      child: PageView.builder(
+        controller: _controller,
+        itemCount: _items.length,
+        itemBuilder: (context, i) {
+          final f = _items[i];
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0C1D38).withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: const Color(0xFFFFD36E).withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.08),
+                    border: Border.all(
+                      color: const Color(0xFFFFD36E).withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(f.emoji, style: const TextStyle(fontSize: 24)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              f.name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13.5,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (_exactToday)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFD36E),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'আজ',
+                                style: TextStyle(
+                                  color: Color(0xFF08172F),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        f.role,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11.5,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _exactToday
+                            ? 'আজ ${f.eventType}দিন'
+                            : '${bnNum(f.day)} ${gregMonthBn(f.month)} • ${f.eventType}দিন',
+                        style: const TextStyle(
+                          color: Color(0xFFFFD36E),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -2578,6 +2879,7 @@ class ContentData {
   static Map<String, List<List<String>>> get categories => {
     ..._staticCategories,
     'পঞ্জিকা': _livePanjika(),
+    'রাশিফল': _liveRashiphal(),
   };
 
   static List<List<String>> _livePanjika() {
@@ -2596,6 +2898,57 @@ class ContentData {
       ['রাহুকাল', '${bnTime12(rahu['start']!)}–${bnTime12(rahu['end']!)}'],
       ['চন্দ্র রাশি', PanchangCalculator.rashiNames[rashiIdx]],
     ];
+  }
+
+  /// প্রতিদিনের রাশিফল — আগে প্রতিটা রাশির জন্য একই লেখা সবসময় দেখাত
+  /// (fake demo data)। এখন এটা "চন্দ্র গোচর ফল"-এর ঐতিহ্যবাহী নিয়ম মেনে
+  /// হিসেব হয়: আজ চাঁদ প্রকৃতপক্ষে কোন রাশিতে আছে (real জ্যোতির্বিদ্যা
+  /// হিসেব থেকে) সেটা প্রতিটা রাশি থেকে কত নম্বর ঘরে পড়ছে বের করে, তার
+  /// ভিত্তিতে ক্লাসিক্যাল ফলাফল দেখানো হয় — কোনো random/fake সংখ্যা নেই।
+  /// চাঁদ প্রতি ~২.২৫ দিনে রাশি বদলায় বলে ফলটাও বাস্তবসম্মতভাবেই বদলায়;
+  /// শুভ সংখ্যা/রং প্রতিদিনের তিথি অনুযায়ী পাল্টায়, তাই প্রতিদিনই আলাদা লাগে।
+  static const List<List<String>> _gocharHouses = [
+    ['শরীর-মন ও আত্মবিশ্বাসে প্রভাব পড়বে', 'মিশ্র'],
+    ['অর্থ ও কথাবার্তায় প্রভাব — হিসেব করে খরচ করুন', 'মিশ্র'],
+    ['সাহস, উদ্যোগ ও ভাইবোনের বিষয়ে শুভ ফল', 'শুভ'],
+    ['মানসিক শান্তি ও পারিবারিক বিষয়ে প্রভাব', 'মিশ্র'],
+    ['বিদ্যা, সন্তান ও সৃজনশীলতায় প্রভাব', 'মিশ্র'],
+    ['প্রতিযোগিতা ও পরিশ্রমে শুভ ফল', 'শুভ'],
+    ['সম্পর্ক ও ব্যবসায়িক আলোচনায় প্রভাব', 'মিশ্র'],
+    ['অপ্রত্যাশিত পরিবর্তন হতে পারে — সতর্ক থাকুন', 'সতর্কতা'],
+    ['ভাগ্য, ভ্রমণ ও শুভ কাজে ইতিবাচক প্রভাব', 'শুভ'],
+    ['কাজ ও পেশাগত জীবনে অগ্রগতির যোগ', 'শুভ'],
+    ['লাভ ও ইচ্ছাপূরণে অনুকূল সময়', 'শুভ'],
+    ['খরচ বাড়তে পারে, আজ একটু বিশ্রাম নিন', 'সতর্কতা'],
+  ];
+
+  static const List<String> _rashiSymbols = [
+    '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓',
+  ];
+  static const List<String> _luckyColors = [
+    'লাল', 'সাদা', 'সবুজ', 'রূপালি', 'সোনালি', 'নীল', 'গোলাপি', 'মেরুন',
+    'হলুদ', 'বাদামি', 'আকাশি', 'বেগুনি',
+  ];
+
+  static List<List<String>> _liveRashiphal() {
+    final now = DateTime.now();
+    final moonRashiIdx = PanchangCalculator.rashiIndexFor(now);
+    final tithi = PanchangCalculator.tithiFor(now);
+    return List.generate(12, (r) {
+      // আজ চাঁদ [r] রাশি থেকে কত নম্বর ঘরে (১..১২) আছে
+      final house = (moonRashiIdx - r + 12) % 12;
+      final theme = _gocharHouses[house][0];
+      final tag = _gocharHouses[house][1];
+      final icon = tag == 'শুভ'
+          ? '✅'
+          : (tag == 'সতর্কতা' ? '⚠️' : '➖');
+      final luckyNum = ((tithi.index + r) % 9) + 1;
+      final color = _luckyColors[(tithi.index + r) % _luckyColors.length];
+      return [
+        '${_rashiSymbols[r]} ${PanchangCalculator.rashiNames[r]}',
+        '$icon $theme • শুভ সংখ্যা ${bnNum(luckyNum)} • শুভ রং $color',
+      ];
+    });
   }
 
   static const Map<String, List<List<String>>> _staticCategories = {
@@ -2989,6 +3342,355 @@ class AppLocation {
 
   static void select(String d) {
     if (coordinates.containsKey(d)) district = d;
+  }
+}
+
+// =====================================================================
+// লাইভ আবহাওয়া — Open-Meteo (ফ্রি, কোনো API key লাগে না)
+// =====================================================================
+
+/// নির্বাচিত জেলায় এখন সত্যিই বৃষ্টি হচ্ছে কিনা — শুধু এইটুকু তথ্যের জন্য
+/// Open-Meteo-এর ফ্রি "current weather" এন্ডপয়েন্ট ব্যবহার করা হচ্ছে।
+/// ইন্টারনেট না থাকলে বা কল ব্যর্থ হলে চুপচাপ "বৃষ্টি নেই" ধরে নেওয়া হয় —
+/// এই ফিচারটার জন্য অ্যাপের বাকি অংশ কখনো আটকে থাকবে না।
+class WeatherService extends ChangeNotifier {
+  WeatherService._();
+  static final WeatherService instance = WeatherService._();
+
+  bool isRaining = false;
+  double? tempC;
+  DateTime? _lastFetch;
+  double? _lastLat;
+  double? _lastLon;
+  bool _loading = false;
+
+  // WMO weather code অনুযায়ী বৃষ্টি/বজ্রবৃষ্টি/বরফবৃষ্টি ধরনের কোড
+  static const Set<int> _rainCodes = {
+    51, 53, 55, 56, 57, // ঝিরিঝিরি বৃষ্টি
+    61, 63, 65, 66, 67, // সাধারণ বৃষ্টি
+    80, 81, 82, // hovering/heavy shower
+    95, 96, 99, // বজ্রবৃষ্টি
+  };
+
+  Future<void> refresh({bool force = false}) async {
+    final lat = AppLocation.lat;
+    final lon = AppLocation.lon;
+    final now = DateTime.now();
+    final sameLocation = _lastLat == lat && _lastLon == lon;
+    final fresh = _lastFetch != null &&
+        now.difference(_lastFetch!) < const Duration(minutes: 15);
+    if (_loading || (!force && sameLocation && fresh)) return;
+    _loading = true;
+    try {
+      final uri = Uri.parse(
+        'https://api.open-meteo.com/v1/forecast'
+        '?latitude=$lat&longitude=$lon'
+        '&current=precipitation,weather_code,temperature_2m'
+        '&timezone=Asia%2FKolkata',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final current = data['current'] as Map<String, dynamic>?;
+        if (current != null) {
+          final precip = (current['precipitation'] as num?)?.toDouble() ?? 0;
+          final code = (current['weather_code'] as num?)?.toInt() ?? 0;
+          isRaining = precip > 0.1 || _rainCodes.contains(code);
+          tempC = (current['temperature_2m'] as num?)?.toDouble();
+          _lastFetch = now;
+          _lastLat = lat;
+          _lastLon = lon;
+          notifyListeners();
+        }
+      }
+    } catch (_) {
+      // অফলাইন/এরর হলে যা ছিল তাই থাকবে — অ্যাপ ভেঙে পড়বে না
+    } finally {
+      _loading = false;
+    }
+  }
+}
+
+// =====================================================================
+// গ্রাম/নদীর দৃশ্য — রিয়েল সূর্যোদয়-সূর্যাস্ত অনুযায়ী সূর্য ওঠে-নামে,
+// লাইভ আবহাওয়া বৃষ্টি বললে বৃষ্টির অ্যানিমেশনও দেখায়
+// =====================================================================
+
+class VillageHorizonScene extends StatefulWidget {
+  const VillageHorizonScene({super.key, this.height = 190});
+  final double height;
+
+  @override
+  State<VillageHorizonScene> createState() => _VillageHorizonSceneState();
+}
+
+class _VillageHorizonSceneState extends State<VillageHorizonScene>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _rainController;
+  Timer? _clockTimer;
+  double _sunFrac = 0.5; // -1 = রাত (সূর্য দিগন্তের নিচে), 0..1 = দিনের ভগ্নাংশ
+
+  @override
+  void initState() {
+    super.initState();
+    _rainController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+    _recomputeSun();
+    WeatherService.instance.addListener(_onWeatherChange);
+    WeatherService.instance.refresh();
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _recomputeSun();
+    });
+  }
+
+  void _onWeatherChange() {
+    if (mounted) setState(() {});
+  }
+
+  void _recomputeSun() {
+    final now = DateTime.now();
+    final today = PanchangCalculator.sunTimes(
+      now,
+      lat: AppLocation.lat,
+      lon: AppLocation.lon,
+    );
+    // DateTime.now() প্রকৃত মুহূর্ত (isUtc=false); sunTimes() যা দেয় তা
+    // "IST-marked" (দেখুন PanchangCalculator._toTrueUtc-এর মন্তব্য) — দুটোকে
+    // একই ফরম্যাটে না আনলে তুলনাটা কয়েক ঘন্টা ভুল হয়ে যায়।
+    final nowMarked = now.toUtc().add(const Duration(hours: 5, minutes: 30));
+    double frac;
+    if (nowMarked.isBefore(today.sunrise) || nowMarked.isAfter(today.sunset)) {
+      frac = -1;
+    } else {
+      final total = today.sunset.difference(today.sunrise).inSeconds;
+      final elapsed = nowMarked.difference(today.sunrise).inSeconds;
+      frac = total <= 0 ? 0.5 : (elapsed / total).clamp(0.0, 1.0);
+    }
+    if (mounted) setState(() => _sunFrac = frac);
+  }
+
+  @override
+  void dispose() {
+    _rainController.dispose();
+    _clockTimer?.cancel();
+    WeatherService.instance.removeListener(_onWeatherChange);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: widget.height,
+      width: double.infinity,
+      child: ClipRect(
+        child: AnimatedBuilder(
+          animation: _rainController,
+          builder: (context, _) {
+            return CustomPaint(
+              painter: _VillageHorizonPainter(
+                sunFrac: _sunFrac,
+                isRaining: WeatherService.instance.isRaining,
+                rainT: _rainController.value,
+              ),
+              size: Size.infinite,
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _VillageHorizonPainter extends CustomPainter {
+  _VillageHorizonPainter({
+    required this.sunFrac,
+    required this.isRaining,
+    required this.rainT,
+  });
+  final double sunFrac; // -1 রাত, নাহলে 0..1
+  final bool isRaining;
+  final double rainT;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final horizonY = h * 0.62;
+    final isNight = sunFrac < 0;
+
+    // ---- সূর্য (ও তার আলো) ----
+    if (!isNight) {
+      final sunX = w * (0.12 + 0.76 * sunFrac);
+      final arc = math.sin(math.pi * sunFrac);
+      final sunY = horizonY - arc * (h * 0.5) - 6;
+      final warmth = Color.lerp(
+        const Color(0xFFFF7A3D),
+        const Color(0xFFFFE9A8),
+        arc.clamp(0.0, 1.0),
+      )!;
+      final glow = Paint()
+        ..shader = RadialGradient(
+          colors: [warmth.withValues(alpha: 0.55), warmth.withValues(alpha: 0)],
+        ).createShader(
+          Rect.fromCircle(center: Offset(sunX, sunY), radius: 70),
+        );
+      canvas.drawCircle(Offset(sunX, sunY), 70, glow);
+      final sunPaint = Paint()..color = warmth;
+      canvas.drawCircle(Offset(sunX, sunY), 16, sunPaint);
+    }
+
+    // ---- দূরের পাহাড়ের সিলুয়েট ----
+    final farHill = Paint()..color = const Color(0xFF17263F);
+    final farPath = Path()..moveTo(0, horizonY - 10);
+    farPath.quadraticBezierTo(
+      w * 0.22,
+      horizonY - 42,
+      w * 0.42,
+      horizonY - 14,
+    );
+    farPath.quadraticBezierTo(
+      w * 0.65,
+      horizonY - 46,
+      w * 0.85,
+      horizonY - 12,
+    );
+    farPath.quadraticBezierTo(w * 0.95, horizonY - 26, w, horizonY - 8);
+    farPath.lineTo(w, horizonY + 4);
+    farPath.lineTo(0, horizonY + 4);
+    farPath.close();
+    canvas.drawPath(farPath, farHill);
+
+    // ---- কাছের পাহাড়/টিলা সিলুয়েট ----
+    final nearHill = Paint()..color = const Color(0xFF0C1626);
+    final nearPath = Path()..moveTo(0, horizonY + 6);
+    nearPath.quadraticBezierTo(
+      w * 0.18,
+      horizonY - 20,
+      w * 0.34,
+      horizonY + 8,
+    );
+    nearPath.quadraticBezierTo(
+      w * 0.55,
+      horizonY - 16,
+      w * 0.78,
+      horizonY + 10,
+    );
+    nearPath.quadraticBezierTo(w * 0.92, horizonY - 6, w, horizonY + 6);
+    nearPath.lineTo(w, horizonY + 20);
+    nearPath.lineTo(0, horizonY + 20);
+    nearPath.close();
+    canvas.drawPath(nearPath, nearHill);
+
+    // ---- গাছ ও কুঁড়েঘর ----
+    final treePaint = Paint()..color = const Color(0xFF07101d);
+    void tree(double x, double baseY, double s) {
+      canvas.drawLine(
+        Offset(x, baseY),
+        Offset(x, baseY - 14 * s),
+        Paint()
+          ..color = treePaint.color
+          ..strokeWidth = 2.4 * s,
+      );
+      final top = Path()
+        ..moveTo(x, baseY - 10 * s)
+        ..lineTo(x - 9 * s, baseY - 26 * s)
+        ..lineTo(x + 9 * s, baseY - 26 * s)
+        ..close();
+      canvas.drawPath(top, treePaint);
+      final top2 = Path()
+        ..moveTo(x, baseY - 20 * s)
+        ..lineTo(x - 7 * s, baseY - 34 * s)
+        ..lineTo(x + 7 * s, baseY - 34 * s)
+        ..close();
+      canvas.drawPath(top2, treePaint);
+    }
+
+    void hut(double x, double baseY, double s) {
+      final body = Rect.fromLTWH(x - 13 * s, baseY - 16 * s, 26 * s, 16 * s);
+      canvas.drawRect(body, treePaint);
+      final roof = Path()
+        ..moveTo(x - 17 * s, baseY - 16 * s)
+        ..lineTo(x, baseY - 30 * s)
+        ..lineTo(x + 17 * s, baseY - 16 * s)
+        ..close();
+      canvas.drawPath(roof, treePaint);
+    }
+
+    tree(w * 0.10, horizonY + 8, 1.0);
+    tree(w * 0.16, horizonY + 10, 0.8);
+    hut(w * 0.27, horizonY + 12, 1.0);
+    tree(w * 0.37, horizonY + 9, 0.9);
+    hut(w * 0.50, horizonY + 13, 1.1);
+    tree(w * 0.60, horizonY + 8, 0.85);
+    tree(w * 0.72, horizonY + 11, 1.0);
+    hut(w * 0.83, horizonY + 12, 0.95);
+    tree(w * 0.92, horizonY + 9, 0.8);
+
+    // ---- নদী/পুকুর (প্রতিফলনসহ) ----
+    final riverRect = Rect.fromLTWH(0, horizonY + 20, w, h - horizonY - 20);
+    final riverPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: isNight
+            ? [const Color(0xFF0A1220), const Color(0xFF040810)]
+            : [const Color(0xFF17324A), const Color(0xFF0A1A2A)],
+      ).createShader(riverRect);
+    canvas.drawRect(riverRect, riverPaint);
+
+    // সূর্যের প্রতিফলন
+    if (!isNight) {
+      final sunX = w * (0.12 + 0.76 * sunFrac);
+      final reflectPaint = Paint()
+        ..color = const Color(0xFFFFD9A0).withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(sunX, horizonY + 34),
+          width: 30,
+          height: 14,
+        ),
+        reflectPaint,
+      );
+    }
+    // পানির হালকা ঢেউরেখা
+    final ripple = Paint()
+      ..color = Colors.white.withValues(alpha: 0.06)
+      ..strokeWidth = 1;
+    for (int i = 0; i < 4; i++) {
+      final y = horizonY + 28 + i * 10.0;
+      if (y > h) break;
+      canvas.drawLine(Offset(0, y), Offset(w, y), ripple);
+    }
+
+    // ---- বৃষ্টি ----
+    if (isRaining) {
+      final rainPaint = Paint()
+        ..color = Colors.lightBlueAccent.withValues(alpha: 0.5)
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round;
+      final rnd = math.Random(7);
+      for (int i = 0; i < 70; i++) {
+        final baseX = rnd.nextDouble() * (w + 60) - 30;
+        final speedFactor = 0.6 + rnd.nextDouble() * 0.8;
+        final y0 = ((rainT * speedFactor + rnd.nextDouble()) % 1.0) * h;
+        final x0 = baseX + y0 * 0.25;
+        canvas.drawLine(
+          Offset(x0, y0),
+          Offset(x0 - 6, y0 + 14),
+          rainPaint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _VillageHorizonPainter old) {
+    return old.sunFrac != sunFrac ||
+        old.isRaining != isRaining ||
+        old.rainT != rainT;
   }
 }
 
