@@ -34,6 +34,7 @@ class AppSettings extends ChangeNotifier {
   static const _kDistrict = 'district';
   static const _kName = 'profile_name';
   static const _kCity = 'profile_city';
+  static const _kSetupDone = 'setup_done';
 
   SharedPreferences? _prefs;
 
@@ -43,6 +44,10 @@ class AppSettings extends ChangeNotifier {
   bool notifications = true;
   String profileName = '';
   String profileCity = '';
+  // একবার ভাষা/জেলা/থিম বেছে "শুরু করুন" চাপলে এটা true হয়ে সেভ থাকে —
+  // পরের বার অ্যাপ/ওয়েব লিংক খুললে পুরো onboarding আর দেখাতে হয় না,
+  // সরাসরি হোম স্ক্রিনে চলে যায়
+  bool setupComplete = false;
 
   bool get isBangla => lang == 'বাংলা';
 
@@ -58,9 +63,18 @@ class AppSettings extends ChangeNotifier {
     notifications = p.getBool(_kNotif) ?? notifications;
     profileName = p.getString(_kName) ?? '';
     profileCity = p.getString(_kCity) ?? '';
+    setupComplete = p.getBool(_kSetupDone) ?? false;
     final d = p.getString(_kDistrict);
     if (d != null) AppLocation.district = d;
     notifyListeners();
+  }
+
+  /// Onboarding শেষে ("শুরু করুন" বাটনে) ডাকা হয় — এরপর থেকে অ্যাপ খুললেই
+  /// সরাসরি হোম স্ক্রিনে যাবে, ভাষা/জেলা/পারমিশন স্ক্রিন আর দেখাবে না
+  Future<void> markSetupComplete() async {
+    setupComplete = true;
+    final p = _prefs ??= await SharedPreferences.getInstance();
+    await p.setBool(_kSetupDone, true);
   }
 
   Future<void> save({
@@ -1192,8 +1206,16 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) Navigator.pushReplacementNamed(context, '/language');
+    // আগে একবার onboarding (ভাষা/জেলা/থিম/পারমিশন) শেষ করা থাকলে প্রতিবার
+    // অ্যাপ/ওয়েব লিংক খোলার সময় ওই স্ক্রিনগুলো আর দেখাতে হয় না —
+    // সরাসরি হোম স্ক্রিনে চলে যাবে
+    final alreadySetUp = AppSettings.instance.setupComplete;
+    Future.delayed(Duration(seconds: alreadySetUp ? 1 : 3), () {
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(
+        context,
+        alreadySetUp ? '/home' : '/language',
+      );
     });
   }
 
@@ -1699,11 +1721,15 @@ class _ThemeSelectScreenState extends State<ThemeSelectScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                 ),
-                onPressed: () => Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/home',
-                  (route) => false,
-                ),
+                onPressed: () async {
+                  await AppSettings.instance.markSetupComplete();
+                  if (!context.mounted) return;
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/home',
+                    (route) => false,
+                  );
+                },
                 child: const Text(
                   'শুরু করুন',
                   style: TextStyle(
