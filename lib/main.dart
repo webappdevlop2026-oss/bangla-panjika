@@ -866,6 +866,72 @@ class _CosmicRainOverlayPainter extends CustomPainter {
 /// (শুধু ম্লান earthshine), পূর্ণিমায় সম্পূর্ণ আলোকিত গোলক, আর মাঝের
 /// দিনগুলোতে সঠিক অনুপাতে কাস্তে/অর্ধেক/উঁচানো চাঁদ (waxing = ডানদিক
 /// আলোকিত ও বাড়ছে — শুক্লপক্ষ; waning = বাঁদিক আলোকিত ও কমছে — কৃষ্ণপক্ষ)।
+/// আজকের প্রকৃত চাঁদের দশা আঁকার জন্য একটাই শেয়ার্ড ফাংশন — CosmicBackground
+/// আর গ্রামের আকাশ, দুই জায়গাতেই একই বাস্তব হিসেব দিয়ে চাঁদ আঁকা হয়।
+void paintMoonPhase(
+  Canvas canvas,
+  Offset center,
+  double r,
+  double illumination,
+  bool waxing,
+) {
+  // ম্লান আভা (glow) — পূর্ণিমার কাছাকাছি সবচেয়ে উজ্জ্বল
+  final glowPaint = Paint()
+    ..shader = RadialGradient(
+      colors: [
+        Colors.white.withValues(alpha: 0.28 * illumination + 0.04),
+        Colors.white.withValues(alpha: 0.0),
+      ],
+    ).createShader(Rect.fromCircle(center: center, radius: r * 1.9));
+  canvas.drawCircle(center, r * 1.9, glowPaint);
+
+  // অন্ধকার/অনালোকিত অংশ — earthshine-এর মতো খুব ম্লান ধূসর, একদমই
+  // কালো নয় (বাস্তবেও অমাবস্যার সময় চাঁদের আভাস বোঝা যায়)
+  final darkPaint = Paint()..color = const Color(0xFF2A3040);
+  canvas.drawCircle(center, r, darkPaint);
+
+  // আলোকিত অংশ আঁকা — দুই অর্ধবৃত্ত/উপবৃত্তের combine দিয়ে বাস্তব দশা
+  final k = illumination.clamp(0.0, 1.0);
+  if (k > 0.005) {
+    final rightLit = waxing;
+    final circleRect = Rect.fromCircle(center: center, radius: r);
+    final halfPath = Path();
+    if (rightLit) {
+      halfPath.addArc(circleRect, -math.pi / 2, math.pi);
+    } else {
+      halfPath.addArc(circleRect, math.pi / 2, math.pi);
+    }
+    halfPath.close();
+
+    Path litPath;
+    if (k <= 0.5) {
+      final rx = r * (1 - 2 * k);
+      final ellipse = Path()
+        ..addOval(Rect.fromCenter(center: center, width: rx * 2, height: r * 2));
+      litPath = Path.combine(PathOperation.difference, halfPath, ellipse);
+    } else {
+      final rx = r * (2 * k - 1);
+      final ellipse = Path()
+        ..addOval(Rect.fromCenter(center: center, width: rx * 2, height: r * 2));
+      litPath = Path.combine(PathOperation.union, halfPath, ellipse);
+    }
+
+    final litPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.2, -0.2),
+        colors: const [Color(0xFFFFFDF5), Color(0xFFEFE6C8), Color(0xFFC9BE9E)],
+        stops: const [0.0, 0.55, 1.0],
+      ).createShader(circleRect);
+    canvas.drawPath(litPath, litPaint);
+  }
+
+  // হালকা crater টেক্সচার (শুধু আলোকিত অংশে বোঝা যায়, বাস্তবসম্মত ছোঁয়া)
+  final craterPaint = Paint()..color = Colors.black.withValues(alpha: 0.07);
+  canvas.drawCircle(center + Offset(r * 0.25, -r * 0.2), r * 0.14, craterPaint);
+  canvas.drawCircle(center + Offset(-r * 0.1, r * 0.28), r * 0.10, craterPaint);
+  canvas.drawCircle(center + Offset(r * 0.05, r * 0.02), r * 0.07, craterPaint);
+}
+
 class _MoonPhasePainter extends CustomPainter {
   _MoonPhasePainter({required this.illumination, required this.waxing});
   final double illumination; // ০ (অমাবস্যা) .. ১ (পূর্ণিমা)
@@ -875,62 +941,7 @@ class _MoonPhasePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final r = size.shortestSide / 2 * 0.62;
-
-    // ম্লান আভা (glow) — পূর্ণিমার কাছাকাছি সবচেয়ে উজ্জ্বল
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Colors.white.withValues(alpha: 0.28 * illumination + 0.04),
-          Colors.white.withValues(alpha: 0.0),
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: r * 1.9));
-    canvas.drawCircle(center, r * 1.9, glowPaint);
-
-    // অন্ধকার/অনালোকিত অংশ — earthshine-এর মতো খুব ম্লান ধূসর, একদমই
-    // কালো নয় (বাস্তবেও অমাবস্যার সময় চাঁদের আভাস বোঝা যায়)
-    final darkPaint = Paint()..color = const Color(0xFF2A3040);
-    canvas.drawCircle(center, r, darkPaint);
-
-    // আলোকিত অংশ আঁকা — দুই অর্ধবৃত্ত/উপবৃত্তের combine দিয়ে বাস্তব দশা
-    final k = illumination.clamp(0.0, 1.0);
-    if (k > 0.005) {
-      final rightLit = waxing;
-      final circleRect = Rect.fromCircle(center: center, radius: r);
-      final halfPath = Path();
-      if (rightLit) {
-        halfPath.addArc(circleRect, -math.pi / 2, math.pi);
-      } else {
-        halfPath.addArc(circleRect, math.pi / 2, math.pi);
-      }
-      halfPath.close();
-
-      Path litPath;
-      if (k <= 0.5) {
-        final rx = r * (1 - 2 * k);
-        final ellipse = Path()
-          ..addOval(Rect.fromCenter(center: center, width: rx * 2, height: r * 2));
-        litPath = Path.combine(PathOperation.difference, halfPath, ellipse);
-      } else {
-        final rx = r * (2 * k - 1);
-        final ellipse = Path()
-          ..addOval(Rect.fromCenter(center: center, width: rx * 2, height: r * 2));
-        litPath = Path.combine(PathOperation.union, halfPath, ellipse);
-      }
-
-      final litPaint = Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(-0.2, -0.2),
-          colors: const [Color(0xFFFFFDF5), Color(0xFFEFE6C8), Color(0xFFC9BE9E)],
-          stops: const [0.0, 0.55, 1.0],
-        ).createShader(circleRect);
-      canvas.drawPath(litPath, litPaint);
-    }
-
-    // হালকা crater টেক্সচার (শুধু আলোকিত অংশে বোঝা যায়, বাস্তবসম্মত ছোঁয়া)
-    final craterPaint = Paint()..color = Colors.black.withValues(alpha: 0.07);
-    canvas.drawCircle(center + Offset(r * 0.25, -r * 0.2), r * 0.14, craterPaint);
-    canvas.drawCircle(center + Offset(-r * 0.1, r * 0.28), r * 0.10, craterPaint);
-    canvas.drawCircle(center + Offset(r * 0.05, r * 0.02), r * 0.07, craterPaint);
+    paintMoonPhase(canvas, center, r, illumination, waxing);
   }
 
   @override
@@ -3676,6 +3687,8 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
   late final AnimationController _rainController;
   Timer? _clockTimer;
   double _sunFrac = 0.5; // -1 = রাত (সূর্য দিগন্তের নিচে), 0..1 = দিনের ভগ্নাংশ
+  double _moonIllum = 0.5; // প্রকৃত চাঁদের আলোকিত অংশ, ০..১
+  bool _moonWaxing = true;
 
   @override
   void initState() {
@@ -3715,7 +3728,18 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
       final elapsed = nowMarked.difference(today.sunrise).inSeconds;
       frac = total <= 0 ? 0.5 : (elapsed / total).clamp(0.0, 1.0);
     }
-    if (mounted) setState(() => _sunFrac = frac);
+    // প্রকৃত চাঁদের দশা — একই হিসেব যা CosmicBackground-এও ব্যবহার হয়
+    const synodic = 29.530588853;
+    final moonAge = PanchangCalculator.moonAgeDays(now) % synodic;
+    final moonIllum = (1 - math.cos(moonAge / synodic * 2 * math.pi)) / 2;
+    final moonWax = moonAge < synodic / 2;
+    if (mounted) {
+      setState(() {
+        _sunFrac = frac;
+        _moonIllum = moonIllum;
+        _moonWaxing = moonWax;
+      });
+    }
   }
 
   @override
@@ -3740,6 +3764,8 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
                 sunFrac: _sunFrac,
                 isRaining: WeatherService.instance.isRaining,
                 rainT: _rainController.value,
+                moonIllumination: _moonIllum,
+                moonWaxing: _moonWaxing,
               ),
               size: Size.infinite,
             );
@@ -3755,10 +3781,14 @@ class _VillageHorizonPainter extends CustomPainter {
     required this.sunFrac,
     required this.isRaining,
     required this.rainT,
+    required this.moonIllumination,
+    required this.moonWaxing,
   });
   final double sunFrac; // -1 রাত, নাহলে 0..1
   final bool isRaining;
   final double rainT;
+  final double moonIllumination; // প্রকৃত চাঁদের আলোকিত অংশ, ০..১
+  final bool moonWaxing;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -3766,11 +3796,37 @@ class _VillageHorizonPainter extends CustomPainter {
     final h = size.height;
     final horizonY = h * 0.62;
     final isNight = sunFrac < 0;
+    final arc = isNight ? 0.0 : math.sin(math.pi * sunFrac);
 
-    // ---- সূর্য (ও তার আলো) ----
-    if (!isNight) {
+    // ---- আকাশ: নিজস্ব real-time রং — দিনে উজ্জ্বল, রাতে গাঢ়, বৃষ্টি
+    // হলে মেঘলা ধূসর — CosmicBackground-এর উপর নির্ভর না করে এই দৃশ্যটা
+    // নিজেই সঠিকভাবে দিন/রাত/আবহাওয়া দেখায়
+    final skyRect = Rect.fromLTWH(0, 0, w, horizonY + 24);
+    List<Color> skyColors;
+    if (isRaining) {
+      skyColors = isNight
+          ? const [Color(0xFF090C12), Color(0xFF171C24), Color(0xFF232A34)]
+          : const [Color(0xFF48525E), Color(0xFF6B7581), Color(0xFF8C97A2)];
+    } else if (isNight) {
+      skyColors = const [Color(0xFF01040D), Color(0xFF0A1330), Color(0xFF17264A)];
+    } else {
+      skyColors = [
+        Color.lerp(const Color(0xFF6FA7E0), const Color(0xFF2E6BB8), 1 - arc)!,
+        Color.lerp(const Color(0xFFAFD4EE), const Color(0xFF7BB4E0), 1 - arc)!,
+        Color.lerp(const Color(0xFFEAF5FC), const Color(0xFFCDE6F5), 1 - arc)!,
+      ];
+    }
+    final skyPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: skyColors,
+      ).createShader(skyRect);
+    canvas.drawRect(skyRect, skyPaint);
+
+    // ---- সূর্য/চাঁদ (ও তার আলো) — বৃষ্টি/মেঘলা থাকলে মেঘে ঢাকা থাকে ----
+    if (!isRaining && !isNight) {
       final sunX = w * (0.12 + 0.76 * sunFrac);
-      final arc = math.sin(math.pi * sunFrac);
       final sunY = horizonY - arc * (h * 0.5) - 6;
       final warmth = Color.lerp(
         const Color(0xFFFF7A3D),
@@ -3786,6 +3842,9 @@ class _VillageHorizonPainter extends CustomPainter {
       canvas.drawCircle(Offset(sunX, sunY), 70, glow);
       final sunPaint = Paint()..color = warmth;
       canvas.drawCircle(Offset(sunX, sunY), 16, sunPaint);
+    } else if (!isRaining && isNight) {
+      final moonCenter = Offset(w * 0.74, h * 0.20);
+      paintMoonPhase(canvas, moonCenter, 18, moonIllumination, moonWaxing);
     }
 
     // ---- দূরের পাহাড়ের সিলুয়েট ----
@@ -3888,7 +3947,7 @@ class _VillageHorizonPainter extends CustomPainter {
     canvas.drawRect(riverRect, riverPaint);
 
     // সূর্যের প্রতিফলন
-    if (!isNight) {
+    if (!isRaining && !isNight) {
       final sunX = w * (0.12 + 0.76 * sunFrac);
       final reflectPaint = Paint()
         ..color = const Color(0xFFFFD9A0).withValues(alpha: 0.35)
@@ -3937,7 +3996,9 @@ class _VillageHorizonPainter extends CustomPainter {
   bool shouldRepaint(covariant _VillageHorizonPainter old) {
     return old.sunFrac != sunFrac ||
         old.isRaining != isRaining ||
-        old.rainT != rainT;
+        old.rainT != rainT ||
+        old.moonIllumination != moonIllumination ||
+        old.moonWaxing != moonWaxing;
   }
 }
 
