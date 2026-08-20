@@ -709,13 +709,15 @@ class _CosmicBackgroundState extends State<CosmicBackground>
             ),
           ),
           // ---- চাঁদ: প্রকৃত আজকের দশা (শুক্ল/কৃষ্ণপক্ষ) অনুযায়ী আলোকিত অংশ
-          // বদলায় — অমাবস্যায় প্রায় অদৃশ্য, পূর্ণিমায় সম্পূর্ণ গোলাকার
+          // বদলায় — অমাবস্যায় ম্লান, পূর্ণিমায় সম্পূর্ণ গোলাকার। পুরোটা
+          // যেন স্ক্রিনের ভেতরেই স্পষ্ট দেখা যায় তাই কোনো কিনারায় কাটা
+          // পড়ে না এভাবে বসানো হয়েছে।
           Positioned(
-            top: 70,
-            left: -34,
+            top: 66,
+            left: 18,
             child: SizedBox(
-              width: 130,
-              height: 130,
+              width: 150,
+              height: 150,
               child: CustomPaint(
                 painter: _MoonPhasePainter(
                   illumination: _phase.moonIllumination,
@@ -875,20 +877,28 @@ void paintMoonPhase(
   double illumination,
   bool waxing,
 ) {
-  // ম্লান আভা (glow) — পূর্ণিমার কাছাকাছি সবচেয়ে উজ্জ্বল
+  // ম্লান আভা (glow) — সবসময় একটা ন্যূনতম আভা থাকে যাতে অন্ধকার আকাশেও
+  // চাঁদটা স্পষ্ট বোঝা যায়, পূর্ণিমার কাছাকাছি সবচেয়ে উজ্জ্বল
   final glowPaint = Paint()
     ..shader = RadialGradient(
       colors: [
-        Colors.white.withValues(alpha: 0.28 * illumination + 0.04),
+        Colors.white.withValues(alpha: 0.30 * illumination + 0.16),
         Colors.white.withValues(alpha: 0.0),
       ],
-    ).createShader(Rect.fromCircle(center: center, radius: r * 1.9));
-  canvas.drawCircle(center, r * 1.9, glowPaint);
+    ).createShader(Rect.fromCircle(center: center, radius: r * 2.1));
+  canvas.drawCircle(center, r * 2.1, glowPaint);
 
-  // অন্ধকার/অনালোকিত অংশ — earthshine-এর মতো খুব ম্লান ধূসর, একদমই
-  // কালো নয় (বাস্তবেও অমাবস্যার সময় চাঁদের আভাস বোঝা যায়)
-  final darkPaint = Paint()..color = const Color(0xFF2A3040);
+  // অন্ধকার/অনালোকিত অংশ — earthshine-এর মতো ম্লান নীলচে-ধূসর (আকাশের
+  // রঙের চেয়ে স্পষ্ট আলাদা যাতে গোল আকৃতিটা সবসময় বোঝা যায়)
+  final darkPaint = Paint()..color = const Color(0xFF4A5470);
   canvas.drawCircle(center, r, darkPaint);
+  // চাঁদের চারপাশে একটা পাতলা উজ্জ্বল কিনারা — কম আলোকিত দশাতেও যেন
+  // গোলাকার আকৃতিটা আকাশের বিপরীতে স্পষ্ট বোঝা যায়
+  final rimPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.45)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = math.max(1.0, r * 0.045);
+  canvas.drawCircle(center, r, rimPaint);
 
   // আলোকিত অংশ আঁকা — দুই অর্ধবৃত্ত/উপবৃত্তের combine দিয়ে বাস্তব দশা
   final k = illumination.clamp(0.0, 1.0);
