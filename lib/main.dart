@@ -1881,6 +1881,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       );
       return;
     }
+    // পূর্ণিমা ও অমাবস্যা — আগে দুটো আলাদা শীট ছিল, এখন একই বাক্সে ২টা
+    // বাটন দিয়ে টগল করা যায়, দুটোই real তিথি হিসেবের আজকের-পরের তারিখ দেখায়
+    if (title == 'পূর্ণিমা' || title == 'অমাবস্যা') {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (_) => _MoonPhaseSheet(initialIsPurnima: title == 'পূর্ণিমা'),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -2924,6 +2935,194 @@ class _InfoListBox extends StatelessWidget {
   }
 }
 
+/// পূর্ণিমা ও অমাবস্যা — একই বাক্সে ২টা টগল বাটন দিয়ে দেখানো হয় (আগে দুটো
+/// আলাদা শীট ছিল)। দুটোই real তিথি হিসেব থেকে আজকের পরের তারিখ দেখায়,
+/// তাই তারিখ পার হয়ে গেলে পুরনো তারিখ আর দেখা যায় না।
+class _MoonPhaseSheet extends StatefulWidget {
+  final bool initialIsPurnima;
+  const _MoonPhaseSheet({required this.initialIsPurnima});
+
+  @override
+  State<_MoonPhaseSheet> createState() => _MoonPhaseSheetState();
+}
+
+class _MoonPhaseSheetState extends State<_MoonPhaseSheet> {
+  late bool _isPurnima = widget.initialIsPurnima;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _isPurnima ? 'পূর্ণিমা' : 'অমাবস্যা';
+    final items = ContentData.categories[title] ?? const [];
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.3,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0B1B35), Color(0xFF071326), Color(0xFF050D1B)],
+            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFFFFD36E),
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _moonToggleButton(
+                        label: '🌕 পূর্ণিমা',
+                        selected: _isPurnima,
+                        onTap: () => setState(() => _isPurnima = true),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _moonToggleButton(
+                        label: '🌑 অমাবস্যা',
+                        selected: !_isPurnima,
+                        onTap: () => setState(() => _isPurnima = false),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  children: items.isEmpty
+                      ? [
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.08),
+                              ),
+                            ),
+                            child: const Text(
+                              'আগামী কিছুদিনে কোনো তারিখ পাওয়া যায়নি।',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ]
+                      : items
+                          .map(
+                            (row) => Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      row[0],
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Flexible(
+                                    child: Text(
+                                      row[1],
+                                      textAlign: TextAlign.right,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _moonToggleButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFFFFD36E).withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFFFFD36E).withValues(alpha: 0.7)
+                : Colors.white.withValues(alpha: 0.12),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? const Color(0xFFFFD36E) : Colors.white70,
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _FeatureSheet extends StatelessWidget {
   final String title;
   const _FeatureSheet({required this.title});
@@ -3176,7 +3375,43 @@ class ContentData {
     'শুভ দিন': _liveAuspiciousDays(),
     'গ্রহ ও নক্ষত্র': _livePlanets(),
     'গ্রহণ': _liveEclipses(),
+    'পূর্ণিমা': _livePurnima(),
+    'অমাবস্যা': _liveAmabasya(),
   };
+
+  /// আজকের পরের real পূর্ণিমার তারিখ — real তিথি হিসেব থেকে বের করা
+  /// (আগে হার্ডকোডেড ৪টা তারিখ ছিল, তারিখ পার হয়ে গেলেও একই থাকত)
+  static List<List<String>> _livePurnima() {
+    final dates = BengaliCalendarData.findAuspiciousDates(
+      'purnima',
+      count: 4,
+      maxDays: 200,
+    );
+    return dates.map((d) {
+      final month = BengaliDateUtil.monthInfoFor(d).name;
+      return [
+        '$month পূর্ণিমা',
+        '${bnNum(d.day)} ${gregMonthBn(d.month)} ${bnNum(d.year)}',
+      ];
+    }).toList();
+  }
+
+  /// আজকের পরের real অমাবস্যার তারিখ — real তিথি হিসেব থেকে বের করা
+  /// (আগে হার্ডকোডেড ৪টা তারিখ ছিল, তারিখ পার হয়ে গেলেও একই থাকত)
+  static List<List<String>> _liveAmabasya() {
+    final dates = BengaliCalendarData.findAuspiciousDates(
+      'amabasya',
+      count: 4,
+      maxDays: 200,
+    );
+    return dates.map((d) {
+      final month = BengaliDateUtil.monthInfoFor(d).name;
+      return [
+        '$month অমাবস্যা',
+        '${bnNum(d.day)} ${gregMonthBn(d.month)} ${bnNum(d.year)}',
+      ];
+    }).toList();
+  }
 
   /// NASA-র eclipse ক্যাটালগ থেকে যাচাই করা real তারিখ (২০২৬-২০২৭)।
   /// আগে শুধু ২টা তারিখ হার্ডকোডেড ছিল (১২ আগস্ট সূর্যগ্রহণ, ২৮ আগস্ট
