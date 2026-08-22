@@ -3,6 +3,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- ফোন রিস্টার্ট হলেও সেট করা রিমাইন্ডার যেন বহাল থাকে -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- ফোনের real-time লোকেশন ধরে সূর্যোদয়/অস্ত, আবহাওয়া ও বৃষ্টি সঠিকভাবে দেখানোর জন্য -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="বাংলা পঞ্জিকা"
         android:name="${applicationName}"

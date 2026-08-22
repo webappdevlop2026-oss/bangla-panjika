@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -515,6 +516,11 @@ class _CosmicBackgroundState extends State<CosmicBackground>
     _syncRainAnim();
     WeatherService.instance.addListener(_onWeatherChanged);
     WeatherService.instance.refresh();
+    // ফোনের/ব্রাউজারের real-time GPS লোকেশন — অনুমতি পেলে সূর্যোদয়/অস্ত ও
+    // আবহাওয়া ব্যবহারকারীর প্রকৃত জায়গা ধরে হিসেব হবে, না পেলে ম্যানুয়াল
+    // জেলাতেই চুপচাপ থাকবে
+    LocationService.instance.addListener(_onLocationChanged);
+    LocationService.instance.refresh();
     // প্রতি মিনিটে আকাশের রং/সূর্য-চাঁদের অবস্থান রিয়েল টাইমে আপডেট হবে;
     // WeatherService নিজে ১৫ মিনিটের বেশি পুরনো না হলে আবার কল করে না, তাই
     // এখানে refresh() ডাকলেও বাড়তি নেটওয়ার্ক লোড হয় না
@@ -530,6 +536,14 @@ class _CosmicBackgroundState extends State<CosmicBackground>
       _isRaining = WeatherService.instance.isRaining;
       _syncRainAnim();
     });
+  }
+
+  void _onLocationChanged() {
+    if (!mounted) return;
+    // GPS লোকেশন এইমাত্র পাওয়া গেল — সূর্যোদয়/অস্ত ও আবহাওয়া নতুন করে
+    // হিসেব হবে সেই real জায়গা ধরে
+    _refreshPhase();
+    WeatherService.instance.refresh(force: true);
   }
 
   void _syncRainAnim() {
@@ -587,6 +601,7 @@ class _CosmicBackgroundState extends State<CosmicBackground>
     _orbitController.dispose();
     _rainController.dispose();
     WeatherService.instance.removeListener(_onWeatherChanged);
+    LocationService.instance.removeListener(_onLocationChanged);
     _clockTimer?.cancel();
     super.dispose();
   }
@@ -3148,7 +3163,31 @@ class ContentData {
     ..._staticCategories,
     'পঞ্জিকা': _livePanjika(),
     'রাশিফল': _liveRashiphal(),
+    'শুভ দিন': _liveAuspiciousDays(),
   };
+
+  /// "শুভ দিন" — আগে এখানে জেনেরিক প্লেসহোল্ডার টেক্সট থাকত ("শুভ লগ্ন ও
+  /// নির্বাচিত তারিখ")। এখন প্রতিটা কাজের জন্য (বিবাহ/গৃহপ্রবেশ/অন্নপ্রাশন/
+  /// ব্যবসা শুরু/নামকরণ) আজ থেকে পরবর্তী প্রকৃত শুভ তারিখগুলো real তিথি/
+  /// নক্ষত্র হিসেব থেকে বের করে দেখানো হয় — একটা real "লগ্ন ফাইন্ডার"।
+  static List<List<String>> _liveAuspiciousDays() {
+    const cats = [
+      ['💍 বিবাহ', 'marriage'],
+      ['🏠 গৃহপ্রবেশ', 'griha'],
+      ['👶 অন্নপ্রাশন', 'annaprashan'],
+      ['🪔 ব্যবসা শুরু', 'byabosha'],
+      ['📿 নামকরণ', 'namakaran'],
+    ];
+    return cats.map((c) {
+      final dates = BengaliCalendarData.findAuspiciousDates(c[1], count: 3);
+      final text = dates.isEmpty
+          ? 'আগামী কয়েক মাসে নেই'
+          : dates
+              .map((d) => '${bnNum(d.day)} ${gregMonthBn(d.month)}')
+              .join(', ');
+      return [c[0], text];
+    }).toList();
+  }
 
   static List<List<String>> _livePanjika() {
     final now = DateTime.now();
@@ -3605,11 +3644,70 @@ class AppLocation {
     'কালিম্পং': DistrictLocation(27.0670, 88.4750),
   };
 
-  static double get lat => coordinates[district]?.lat ?? 22.5726;
-  static double get lon => coordinates[district]?.lon ?? 88.3639;
+  // ফোনের real-time GPS লোকেশন পাওয়া গেলে সেটাই ব্যবহার হয় — না পেলে
+  // (অনুমতি না দিলে/ডেস্কটপ ব্রাউজারে/এরর হলে) আগের মতো ম্যানুয়ালি বেছে
+  // নেওয়া জেলাতেই চুপচাপ ফিরে যায়, অ্যাপ কখনো আটকে থাকে না
+  static double get lat =>
+      LocationService.instance.hasGps
+          ? LocationService.instance.gpsLat!
+          : (coordinates[district]?.lat ?? 22.5726);
+  static double get lon =>
+      LocationService.instance.hasGps
+          ? LocationService.instance.gpsLon!
+          : (coordinates[district]?.lon ?? 88.3639);
 
   static void select(String d) {
     if (coordinates.containsKey(d)) district = d;
+  }
+}
+
+// =====================================================================
+// ফোনের/ব্রাউজারের real-time GPS লোকেশন — অনুমতি পেলে সূর্যোদয়/অস্ত,
+// আবহাওয়া, বৃষ্টি সবকিছু ব্যবহারকারীর প্রকৃত জায়গা ধরে হিসেব হবে
+// =====================================================================
+
+class LocationService extends ChangeNotifier {
+  LocationService._();
+  static final LocationService instance = LocationService._();
+
+  double? gpsLat;
+  double? gpsLon;
+  bool get hasGps => gpsLat != null && gpsLon != null;
+  bool _loading = false;
+  DateTime? _lastFetch;
+
+  Future<void> refresh({bool force = false}) async {
+    final fresh = _lastFetch != null &&
+        DateTime.now().difference(_lastFetch!) < const Duration(minutes: 10);
+    if (_loading || (!force && hasGps && fresh)) return;
+    _loading = true;
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        // অনুমতি না পেলে চুপচাপ ম্যানুয়াল জেলাতেই থাকবে
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+        ),
+      ).timeout(const Duration(seconds: 10));
+      gpsLat = pos.latitude;
+      gpsLon = pos.longitude;
+      _lastFetch = DateTime.now();
+      notifyListeners();
+    } catch (_) {
+      // GPS না থাকলে/এরর হলে/ব্রাউজার সাপোর্ট না করলে — কিছুই ভাঙবে না,
+      // আগের মতো ম্যানুয়াল জেলাই ব্যবহার হবে
+    } finally {
+      _loading = false;
+    }
   }
 }
 
@@ -4588,9 +4686,10 @@ class BengaliCalendarData {
     if (!_auspiciousTithis.contains(tithi.index % 15)) return null;
     if (!_auspiciousNakshatras.contains(nakshatra)) return null;
     if (date.weekday == DateTime.tuesday) return null;
-    // একই নিয়মে পড়া দিনগুলোকে তিনটি ভাগে ভাগ করা হয় যাতে প্রতিটি ট্যাবেই
-    // বাস্তবসম্মত সংখ্যক দিন দেখা যায়
-    switch (date.day % 3) {
+    // একই নিয়মে পড়া দিনগুলোকে পাঁচটা ভাগে ভাগ করা হয় (বিবাহ/গৃহপ্রবেশ/
+    // অন্নপ্রাশন/ব্যবসা শুরু/নামকরণ) যাতে প্রতিটি কাজের জন্য আলাদা আলাদা
+    // বাস্তবসম্মত সংখ্যক শুভ দিন দেখা যায়
+    switch (date.day % 5) {
       case 0:
         return const CalendarEvent('বিবাহের শুভ দিন', 'marriage', icon: '💍');
       case 1:
@@ -4599,13 +4698,46 @@ class BengaliCalendarData {
           'griha',
           icon: '🏠',
         );
-      default:
+      case 2:
         return const CalendarEvent(
           'অন্নপ্রাশনের শুভ দিন',
           'annaprashan',
           icon: '👶',
         );
+      case 3:
+        return const CalendarEvent(
+          'ব্যবসা শুরুর শুভ দিন',
+          'byabosha',
+          icon: '🪔',
+        );
+      default:
+        return const CalendarEvent(
+          'নামকরণের শুভ দিন',
+          'namakaran',
+          icon: '📿',
+        );
     }
+  }
+
+  /// আজ থেকে আগামী [maxDays] দিনের মধ্যে নির্দিষ্ট কাজের (marriage/griha/
+  /// annaprashan/byabosha/namakaran) জন্য পরবর্তী [count]-টা শুভ দিন খুঁজে
+  /// বের করে — real তিথি/নক্ষত্র হিসেব থেকে, কোনো হার্ডকোড করা তারিখ না
+  static List<DateTime> findAuspiciousDates(
+    String category, {
+    int count = 3,
+    int maxDays = 200,
+    DateTime? from,
+  }) {
+    final start = from ?? DateTime.now();
+    final base = DateTime(start.year, start.month, start.day);
+    final results = <DateTime>[];
+    for (int i = 1; i <= maxDays && results.length < count; i++) {
+      final day = base.add(Duration(days: i));
+      if (eventsFor(day).any((e) => e.category == category)) {
+        results.add(day);
+      }
+    }
+    return results;
   }
 
   /// যেকোনো তারিখের সব ইভেন্ট — চারটি উৎস মিলিয়ে:
@@ -4705,6 +4837,8 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
     'বিবাহ',
     'অন্নপ্রাশন',
     'গৃহপ্রবেশ',
+    'ব্যবসা শুরু',
+    'নামকরণ',
   ];
   static const _weekDays = [
     'রবি',
@@ -4755,6 +4889,10 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
         return 'annaprashan';
       case 'গৃহপ্রবেশ':
         return 'griha';
+      case 'ব্যবসা শুরু':
+        return 'byabosha';
+      case 'নামকরণ':
+        return 'namakaran';
       default:
         return '';
     }
