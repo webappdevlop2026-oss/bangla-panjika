@@ -3155,6 +3155,16 @@ class _BottomNavBar extends StatelessWidget {
 // CONTENT DATA — দ্রুত ব্যবহার sheet-গুলোর জন্য ডেমো ডেটা
 // =====================================================================
 
+/// একটা real সূর্য/চন্দ্রগ্রহণের তথ্য — [date] সবসময় স্থানীয় (IST) ক্যালেন্ডার
+/// তারিখ, NASA-র eclipse ক্যাটালগ থেকে যাচাই করা (২০২৬-২০২৭)।
+class _EclipseEvent {
+  final DateTime date;
+  final String icon;
+  final String title;
+  final String desc;
+  const _EclipseEvent(this.date, this.icon, this.title, this.desc);
+}
+
 class ContentData {
   /// 'পঞ্জিকা' ট্যাব বাদে বাকি ক্যাটাগরিগুলো কিউরেটেড নমুনা কনটেন্ট (রাশিফল,
   /// উৎসব তালিকা ইত্যাদি — এগুলোর জন্য প্রকৃত জ্যোতিষ ফিড দরকার)।
@@ -3165,7 +3175,56 @@ class ContentData {
     'রাশিফল': _liveRashiphal(),
     'শুভ দিন': _liveAuspiciousDays(),
     'গ্রহ ও নক্ষত্র': _livePlanets(),
+    'গ্রহণ': _liveEclipses(),
   };
+
+  /// NASA-র eclipse ক্যাটালগ থেকে যাচাই করা real তারিখ (২০২৬-২০২৭)।
+  /// আগে শুধু ২টা তারিখ হার্ডকোডেড ছিল (১২ আগস্ট সূর্যগ্রহণ, ২৮ আগস্ট
+  /// চন্দ্রগ্রহণ) — সেই তারিখ পার হয়ে গেলেও সবসময় ওই পুরনো তারিখই দেখাত।
+  /// এখন এই পুরো তালিকা থেকে আজকের পরের গ্রহণগুলোই দেখানো হয়, তাই তারিখ
+  /// পেরিয়ে গেলে স্বয়ংক্রিয়ভাবে পরের গ্রহণ দেখাবে।
+  static final List<_EclipseEvent> _eclipseEvents = [
+    _EclipseEvent(
+        DateTime(2026, 2, 17), '☀️', 'সূর্যগ্রহণ', 'বলয়গ্রাস সূর্যগ্রহণ'),
+    _EclipseEvent(DateTime(2026, 3, 3), '🌕', 'চন্দ্রগ্রহণ', 'পূর্ণ চন্দ্রগ্রহণ'),
+    _EclipseEvent(DateTime(2026, 8, 12), '☀️', 'সূর্যগ্রহণ', 'পূর্ণ সূর্যগ্রহণ'),
+    _EclipseEvent(
+        DateTime(2026, 8, 28), '🌘', 'চন্দ্রগ্রহণ', 'আংশিক চন্দ্রগ্রহণ'),
+    _EclipseEvent(
+        DateTime(2027, 2, 6), '☀️', 'সূর্যগ্রহণ', 'বলয়গ্রাস সূর্যগ্রহণ'),
+    _EclipseEvent(
+        DateTime(2027, 2, 21), '🌗', 'চন্দ্রগ্রহণ', 'উপচ্ছায়া চন্দ্রগ্রহণ'),
+    _EclipseEvent(
+        DateTime(2027, 7, 18), '🌗', 'চন্দ্রগ্রহণ', 'উপচ্ছায়া চন্দ্রগ্রহণ'),
+    _EclipseEvent(DateTime(2027, 8, 2), '☀️', 'সূর্যগ্রহণ', 'পূর্ণ সূর্যগ্রহণ'),
+    _EclipseEvent(
+        DateTime(2027, 8, 17), '🌗', 'চন্দ্রগ্রহণ', 'উপচ্ছায়া চন্দ্রগ্রহণ'),
+  ];
+
+  /// আজকের পরের (আজসহ) গ্রহণগুলো — গ্রেগরিয়ান তারিখের পাশাপাশি real বাংলা
+  /// মাসের তারিখও দেখায় (যেমন: "২৮ আগস্ট ২০২৬ (১১ ভাদ্র ১৪৩৩) • আংশিক চন্দ্রগ্রহণ")
+  static List<List<String>> _liveEclipses() {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final upcoming =
+        _eclipseEvents.where((e) => !e.date.isBefore(todayStart)).toList();
+    if (upcoming.isEmpty) {
+      return [
+        ['🔭 গ্রহণ', 'আগামী কিছুদিনে কোনো গ্রহণের তথ্য নেই'],
+      ];
+    }
+    return upcoming.map((e) {
+      final info = BengaliDateUtil.monthInfoFor(e.date);
+      final bDay = e.date.difference(info.start).inDays + 1;
+      final gregLabel =
+          '${bnNum(e.date.day)} ${gregMonthBn(e.date.month)} ${bnNum(e.date.year)}';
+      final bengaliLabel = '${bnNum(bDay)} ${info.name} ${bnNum(info.year)}';
+      return [
+        '${e.icon} ${e.title}',
+        '$gregLabel ($bengaliLabel) • ${e.desc}',
+      ];
+    }).toList();
+  }
 
   /// "গ্রহ ও নক্ষত্র" — আগে সূর্য/চন্দ্র/মঙ্গল/বৃহস্পতি/শুক্র/শনি/নক্ষত্র সবই
   /// স্ট্যাটিক প্লেসহোল্ডার টেক্সট ছিল ("গ্রহ তথ্য", "আজ: ধনিষ্ঠা" হার্ডকোডেড)।
