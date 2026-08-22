@@ -1850,28 +1850,49 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     ),
   ];
 
-  final List<FestivalItem> _festivals = const [
-    FestivalItem(
-      '🚢',
-      'রথযাত্রা',
-      '২৭ জ্যৈষ্ঠ',
-    ),
-    FestivalItem(
-      '🐄',
-      'জন্মাষ্টমী',
-      '১৫ ভাদ্র',
-    ),
-    FestivalItem(
-      '🔱',
-      'দুর্গাপূজা',
-      '৬ আশ্বিন',
-    ),
-    FestivalItem(
-      '🪔',
-      'কালীপূজা',
-      'কার্তিক অমাবস্যা',
-    ),
-  ];
+  // আগে এই ৪টা উৎসব হার্ডকোডেড ছিল, তারিখ পার হয়ে গেলেও একই থাকত (যেমন
+  // রথযাত্রা "২৭ জ্যৈষ্ঠ" — অনেক আগেই পার হয়ে গেছে)। এখন real তিথি/
+  // সংক্রান্তি হিসেব থেকে আজকের-পরের উৎসবগুলো বের করে দেখানো হয়, আর
+  // কার্ডগুলো ডান দিকে ধীরে ধীরে আপনাআপনি স্ক্রল হতেই থাকে (loop করে)।
+  late final List<FestivalItem> _festivals = BengaliCalendarData
+      .upcomingFestivals()
+      .map((f) => FestivalItem(f['icon']!, f['title']!, f['date']!))
+      .toList();
+
+  final ScrollController _festivalScrollCtrl = ScrollController();
+  Timer? _festivalAutoTimer;
+
+  void _startFestivalAutoScroll() {
+    _festivalAutoTimer?.cancel();
+    if (_festivals.length < 2) return;
+    _festivalAutoTimer = Timer.periodic(const Duration(milliseconds: 40), (_) {
+      if (!_festivalScrollCtrl.hasClients) return;
+      final max = _festivalScrollCtrl.position.maxScrollExtent;
+      if (max <= 0) return;
+      final next = _festivalScrollCtrl.offset + 0.6;
+      if (next >= max) {
+        _festivalScrollCtrl.jumpTo(0);
+      } else {
+        _festivalScrollCtrl.jumpTo(next);
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // ১ম ফ্রেমের পর শুরু করা হয় যাতে maxScrollExtent ততক্ষণে হিসেব হয়ে যায়
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _startFestivalAutoScroll();
+    });
+  }
+
+  @override
+  void dispose() {
+    _festivalAutoTimer?.cancel();
+    _festivalScrollCtrl.dispose();
+    super.dispose();
+  }
 
   void _handleOpen(BuildContext context, String title) {
     if (title == 'বাংলা ক্যালেন্ডার') {
@@ -2034,17 +2055,24 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const SizedBox(height: 10),
               SizedBox(
                 height: 148,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _festivals.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (context, i) {
-                    final f = _festivals[i];
-                    return _FestivalCard(
-                      item: f,
-                      onTap: () => _handleOpen(context, f.title),
-                    );
-                  },
+                child: Listener(
+                  // ব্যবহারকারী নিজে টাচ করে স্ক্রল করলে auto-scroll থামিয়ে
+                  // দেওয়া হয়, ছেড়ে দিলে আবার আপনাআপনি চলতে শুরু করে
+                  onPointerDown: (_) => _festivalAutoTimer?.cancel(),
+                  onPointerUp: (_) => _startFestivalAutoScroll(),
+                  child: ListView.separated(
+                    controller: _festivalScrollCtrl,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _festivals.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
+                    itemBuilder: (context, i) {
+                      final f = _festivals[i];
+                      return _FestivalCard(
+                        item: f,
+                        onTap: () => _handleOpen(context, f.title),
+                      );
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -3377,7 +3405,53 @@ class ContentData {
     'গ্রহণ': _liveEclipses(),
     'পূর্ণিমা': _livePurnima(),
     'অমাবস্যা': _liveAmabasya(),
+    'পূজা ও ব্রত': _livePujaBrata(),
   };
+
+  /// [label]-এর পরের প্রকৃত অনুষ্ঠান-তারিখ (আজ থেকে শুরু করে) — real
+  /// তিথি/সংক্রান্তি হিসেব থেকে ([BengaliCalendarData.eventsFor] ব্যবহার করে)
+  static DateTime? _nextEventDate(String label, {int maxDays = 400}) {
+    final now = DateTime.now();
+    final base = DateTime(now.year, now.month, now.day);
+    for (int i = 0; i <= maxDays; i++) {
+      final day = base.add(Duration(days: i));
+      if (BengaliCalendarData.eventsFor(day).any((e) => e.label == label)) {
+        return day;
+      }
+    }
+    return null;
+  }
+
+  /// "পূজা ও ব্রত" — আগে প্রতিটাতে জেনেরিক বর্ণনা ছিল ("উপবাস ও পূজা
+  /// নির্দেশিকা", "শিব পূজা ও ব্রত" ইত্যাদি, কোনো তারিখ ছিল না)। এখন
+  /// প্রতিটার real পরবর্তী তারিখ (তিথি/সংক্রান্তি হিসেব থেকে) দেখানো হয়।
+  static List<List<String>> _livePujaBrata() {
+    final ekadashi = _nextEventDate('একাদশী');
+    final shivaratri = _nextEventDate('মহাশিবরাত্রি');
+    final shashthi = _nextEventDate('মহাষষ্ঠী');
+    final dashami = _nextEventDate('বিজয়া দশমী');
+    final lakshmi = _nextEventDate('কোজাগরী লক্ষ্মীপূজা');
+    final kali = _nextEventDate('কালীপূজা / দীপাবলি');
+    final saraswati = _nextEventDate('সরস্বতী পূজা');
+
+    String fmt(DateTime? d) => d == null
+        ? 'তারিখ পাওয়া যায়নি'
+        : '${bnNum(d.day)} ${gregMonthBn(d.month)} ${bnNum(d.year)}';
+
+    String range(DateTime? a, DateTime? b) {
+      if (a == null || b == null) return 'তারিখ পাওয়া যায়নি';
+      return '${bnNum(a.day)} ${gregMonthBn(a.month)} – ${bnNum(b.day)} ${gregMonthBn(b.month)} ${bnNum(b.year)}';
+    }
+
+    return [
+      ['একাদশী', 'পরবর্তী একাদশী: ${fmt(ekadashi)}'],
+      ['শিবরাত্রি', fmt(shivaratri)],
+      ['দুর্গাপূজা', range(shashthi, dashami)],
+      ['লক্ষ্মীপূজা', fmt(lakshmi)],
+      ['কালীপূজা', fmt(kali)],
+      ['সরস্বতী পূজা', fmt(saraswati)],
+    ];
+  }
 
   /// আজকের পরের real পূর্ণিমার তারিখ — real তিথি হিসেব থেকে বের করা
   /// (আগে হার্ডকোডেড ৪টা তারিখ ছিল, তারিখ পার হয়ে গেলেও একই থাকত)
@@ -5189,6 +5263,38 @@ class BengaliCalendarData {
       final day = base.add(Duration(days: i));
       if (eventsFor(day).any((e) => e.category == category)) {
         results.add(day);
+      }
+    }
+    return results;
+  }
+
+  /// আজকের পরের (আজসহ) real উৎসব/বিশেষ দিন — হোম স্ক্রিনের "উৎসব ও বিশেষ
+  /// দিন" carousel-এর জন্য। category 'general'-এর প্রতিটা আলাদা লেবেল
+  /// একবার করে, তারিখ-ক্রমে দেওয়া হয়, তাই পার-হয়ে-যাওয়া পুরনো তারিখ কখনো
+  /// দেখায় না — আজকের পর যেটা প্রথমে আসে সেটাই তালিকার প্রথমে থাকে।
+  static List<Map<String, String>> upcomingFestivals({
+    int maxDays = 200,
+    int count = 10,
+  }) {
+    final now = DateTime.now();
+    final base = DateTime(now.year, now.month, now.day);
+    final results = <Map<String, String>>[];
+    final seen = <String>{};
+    for (int i = 0; i <= maxDays && results.length < count; i++) {
+      final day = base.add(Duration(days: i));
+      for (final e in eventsFor(day)) {
+        if (e.category != 'general') continue;
+        final title = e.label.split(' / ').first;
+        if (seen.contains(title)) continue;
+        seen.add(title);
+        final info = BengaliDateUtil.monthInfoFor(day);
+        final bDay = day.difference(info.start).inDays + 1;
+        results.add({
+          'icon': e.icon,
+          'title': title,
+          'date': '${bnNum(bDay)} ${info.name}',
+        });
+        if (results.length >= count) break;
       }
     }
     return results;
