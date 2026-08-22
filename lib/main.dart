@@ -3164,7 +3164,47 @@ class ContentData {
     'পঞ্জিকা': _livePanjika(),
     'রাশিফল': _liveRashiphal(),
     'শুভ দিন': _liveAuspiciousDays(),
+    'গ্রহ ও নক্ষত্র': _livePlanets(),
   };
+
+  /// "গ্রহ ও নক্ষত্র" — আগে সূর্য/চন্দ্র/মঙ্গল/বৃহস্পতি/শুক্র/শনি/নক্ষত্র সবই
+  /// স্ট্যাটিক প্লেসহোল্ডার টেক্সট ছিল ("গ্রহ তথ্য", "আজ: ধনিষ্ঠা" হার্ডকোডেড)।
+  /// এখন প্রতিটা real heliocentric Keplerian orbital elements (NASA JPL
+  /// টেবিল) দিয়ে হিসেব করা আজকের প্রকৃত রাশি ও সরল/বক্রী (retrograde) গতি
+  /// দেখায় — কোনো fake ডেটা নেই।
+  static List<List<String>> _livePlanets() {
+    final now = DateTime.now();
+    final sunIdx = PanchangCalculator.sunRashiIndexFor(now);
+    final moonIdx = PanchangCalculator.rashiIndexFor(now);
+    final nakIdx = PanchangCalculator.nakshatraIndexFor(now);
+    const synodic = 29.530588853;
+    final moonAge = PanchangCalculator.moonAgeDays(now) % synodic;
+    final illum = (1 - math.cos(moonAge / synodic * 2 * math.pi)) / 2;
+    final waxing = moonAge < synodic / 2;
+    final moonPhaseText = waxing
+        ? 'বর্ধিষ্ণু (${(illum * 100).round()}%)'
+        : 'ক্ষয়িষ্ণু (${(illum * 100).round()}%)';
+
+    String planetRow(String key) {
+      final idx = PanchangCalculator.planetRashiIndexFor(key, now);
+      final retro = PanchangCalculator.planetIsRetrograde(key, now);
+      final rashi = PanchangCalculator.rashiNames[idx];
+      return '$rashi রাশিতে • ${retro ? "বক্রী" : "সরল"} গতি';
+    }
+
+    return [
+      ['☀️ সূর্য', '${PanchangCalculator.rashiNames[sunIdx]} রাশিতে অবস্থান'],
+      [
+        '🌙 চন্দ্র',
+        '${PanchangCalculator.rashiNames[moonIdx]} রাশিতে • $moonPhaseText',
+      ],
+      ['🔴 মঙ্গল', planetRow('mars')],
+      ['🟡 বৃহস্পতি', planetRow('jupiter')],
+      ['💫 শুক্র', planetRow('venus')],
+      ['🪐 শনি', planetRow('saturn')],
+      ['⭐ নক্ষত্র', 'আজ: ${PanchangCalculator.nakshatraNames[nakIdx]}'],
+    ];
+  }
 
   /// "শুভ দিন" — আগে এখানে জেনেরিক প্লেসহোল্ডার টেক্সট থাকত ("শুভ লগ্ন ও
   /// নির্বাচিত তারিখ")। এখন প্রতিটা কাজের জন্য (বিবাহ/গৃহপ্রবেশ/অন্নপ্রাশন/
@@ -4215,6 +4255,126 @@ class PanchangCalculator {
   static double ayanamsa(double jd) {
     final years = (jd - 2451545.0) / 365.25;
     return _ayanamsaJ2000 + years * 0.013972; // ~৫০.২৪ আর্ক-সেকেন্ড/বছর
+  }
+
+  // -------------------------------------------------------------------
+  // মঙ্গল/বৃহস্পতি/শুক্র/শনি — real heliocentric Keplerian orbital elements
+  // (NASA JPL "Keplerian Elements for Approximate Positions of the Major
+  // Planets", ১৮০০-২০৫০ সাল কভার করে, উৎস:
+  // https://ssd.jpl.nasa.gov/planets/approx_pos.html)। প্রতিটা তালিকায়
+  // ক্রমানুসারে: [a, aDot, e, eDot, I, IDot, L, LDot, peri, periDot, node,
+  // nodeDot] — a = AU, বাকি সব ডিগ্রি (ও ডিগ্রি/জুলিয়ান-শতাব্দী)।
+  static const Map<String, List<double>> _planetElements = {
+    'venus': [
+      0.72333566, 0.00000390, 0.00677672, -0.00004107, 3.39467605,
+      -0.00078890, 181.97909950, 58517.81538729, 131.60246718, 0.00268329,
+      76.67984255, -0.27769418,
+    ],
+    'earth': [
+      1.00000261, 0.00000562, 0.01671123, -0.00004392, -0.00001531,
+      -0.01294668, 100.46457166, 35999.37244981, 102.93768193, 0.32327364,
+      0.0, 0.0,
+    ],
+    'mars': [
+      1.52371034, 0.00001847, 0.09339410, 0.00007882, 1.84969142,
+      -0.00813131, -4.55343205, 19140.30268499, -23.94362959, 0.44441088,
+      49.55953891, -0.29257343,
+    ],
+    'jupiter': [
+      5.20288700, -0.00011607, 0.04838624, -0.00013253, 1.30439695,
+      -0.00183714, 34.39644051, 3034.74612775, 14.72847983, 0.21252668,
+      100.47390909, 0.20469106,
+    ],
+    'saturn': [
+      9.53667594, -0.00125060, 0.05386179, -0.00050991, 2.48599187,
+      0.00193609, 49.95424423, 1222.49362201, 92.59887831, -0.41897216,
+      113.66242448, -0.28867794,
+    ],
+  };
+
+  /// Kepler সমীকরণ (M = E − e·sin E) Newton-Raphson দিয়ে সমাধান, রেডিয়ানে ফেরত
+  static double _solveKepler(double mDeg, double e) {
+    final mRad = _deg2rad(_norm360(mDeg + 180) - 180); // -180..180 রেঞ্জে
+    double eRad = mRad + e * math.sin(mRad);
+    for (int i = 0; i < 8; i++) {
+      final delta =
+          (eRad - e * math.sin(eRad) - mRad) / (1 - e * math.cos(eRad));
+      eRad -= delta;
+      if (delta.abs() < 1e-9) break;
+    }
+    return eRad;
+  }
+
+  /// একটা গ্রহের heliocentric ecliptic (J2000) x,y,z (AU) — [el] হলো
+  /// [_planetElements]-এর ১২টা মানের তালিকা, [t] জুলিয়ান শতাব্দী (J2000 থেকে)
+  static List<double> _heliocentricXYZ(List<double> el, double t) {
+    final a = el[0] + el[1] * t;
+    final e = el[2] + el[3] * t;
+    final i = _deg2rad(el[4] + el[5] * t);
+    final l = el[6] + el[7] * t;
+    final peri = el[8] + el[9] * t;
+    final node = el[10] + el[11] * t;
+    final w = _deg2rad(peri - node);
+    final nodeR = _deg2rad(node);
+    final mDeg = l - peri;
+    final eAnom = _solveKepler(mDeg, e);
+    final xOrb = a * (math.cos(eAnom) - e);
+    final yOrb = a * math.sqrt(1 - e * e) * math.sin(eAnom);
+    final cosW = math.cos(w), sinW = math.sin(w);
+    final cosNode = math.cos(nodeR), sinNode = math.sin(nodeR);
+    final cosI = math.cos(i), sinI = math.sin(i);
+    final x = (cosW * cosNode - sinW * sinNode * cosI) * xOrb +
+        (-sinW * cosNode - cosW * sinNode * cosI) * yOrb;
+    final y = (cosW * sinNode + sinW * cosNode * cosI) * xOrb +
+        (-sinW * sinNode + cosW * cosNode * cosI) * yOrb;
+    final z = (sinW * sinI) * xOrb + (cosW * sinI) * yOrb;
+    return [x, y, z];
+  }
+
+  /// [planet]-এর geocentric apparent ecliptic longitude (ডিগ্রি) — পৃথিবীর
+  /// heliocentric ভেক্টর বাদ দিয়ে geocentric ভেক্টর বের করে atan2 নেওয়া হয়
+  /// (আলোর গতির সময়/aberration বাদ — রাশি নির্ণয়ের জন্য যথেষ্ট নির্ভুল)
+  static double _planetGeoLongitude(String planet, double jd) {
+    final t = (jd - 2451545.0) / 36525.0;
+    final earth = _heliocentricXYZ(_planetElements['earth']!, t);
+    final p = _heliocentricXYZ(_planetElements[planet]!, t);
+    final gx = p[0] - earth[0];
+    final gy = p[1] - earth[1];
+    return _norm360(_rad2deg(math.atan2(gy, gx)));
+  }
+
+  static double marsLongitude(double jd) => _planetGeoLongitude('mars', jd);
+  static double jupiterLongitude(double jd) =>
+      _planetGeoLongitude('jupiter', jd);
+  static double venusLongitude(double jd) => _planetGeoLongitude('venus', jd);
+  static double saturnLongitude(double jd) =>
+      _planetGeoLongitude('saturn', jd);
+
+  /// আজ [planet] কোন রাশিতে আছে (sidereal, Lahiri ayanamsa বাদ দিয়ে)
+  static int planetRashiIndexFor(String planet, DateTime localDateTime) {
+    final jd = julianDay(_toTrueUtc(localDateTime));
+    final lon = _planetGeoLongitude(planet, jd);
+    final sidereal = _norm360(lon - ayanamsa(jd));
+    return (sidereal / 30.0).floor().clamp(0, 11);
+  }
+
+  /// [planet] বক্রী (retrograde) কিনা — আজ ও ১ দিন আগের longitude তুলনা করে
+  static bool planetIsRetrograde(String planet, DateTime localDateTime) {
+    final jdNow = julianDay(_toTrueUtc(localDateTime));
+    final lonNow = _planetGeoLongitude(planet, jdNow);
+    final lonPrev = _planetGeoLongitude(planet, jdNow - 1.0);
+    var diff = lonNow - lonPrev;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return diff < 0;
+  }
+
+  /// আজ সূর্য কোন রাশিতে আছে (sidereal)
+  static int sunRashiIndexFor(DateTime localDateTime) {
+    final jd = julianDay(_toTrueUtc(localDateTime));
+    final sun = sunLongitude(jd);
+    final sidereal = _norm360(sun - ayanamsa(jd));
+    return (sidereal / 30.0).floor().clamp(0, 11);
   }
 
   /// [sunTimes]/[BengaliDateUtil._sankranti] যেই DateTime ফেরত দেয় সেগুলো
