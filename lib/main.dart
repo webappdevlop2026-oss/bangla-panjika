@@ -12184,8 +12184,11 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
     String festival = '';
     try {
       final events = BengaliCalendarData.eventsFor(now);
-      if (events.isNotEmpty) {
-        festival = events.take(2).map((e) => e.label).join(' • ');
+      final festivalEvents = events
+          .where((e) => e.category == 'general')
+          .toList();
+      if (festivalEvents.isNotEmpty) {
+        festival = festivalEvents.take(2).map((e) => e.label).join(' • ');
       }
     } catch (_) {}
 
