@@ -18,8 +18,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Move village scene directly below hero date card
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
 
           path = Path('lib/main.dart')
@@ -85,22 +86,23 @@ jobs:
               const AdBannerWidget(),
 """
 
-          for name, old in [
-              ('desktop hero anchor', desktop_anchor),
-              ('mobile hero anchor', mobile_anchor),
-              ('desktop old village block', desktop_old),
-              ('mobile old village block', mobile_old),
-          ]:
+          replacements = [
+              ('desktop hero anchor', desktop_anchor, desktop_new),
+              ('mobile hero anchor', mobile_anchor, mobile_new),
+              ('desktop old village block', desktop_old, desktop_old_new),
+              ('mobile old village block', mobile_old, mobile_old_new),
+          ]
+
+          for name, old, new in replacements:
               if old not in text:
                   raise SystemExit(f'Missing expected block: {name}')
+              text = text.replace(old, new, 1)
 
-          text = text.replace(desktop_anchor, desktop_new, 1)
-          text = text.replace(mobile_anchor, mobile_new, 1)
-          text = text.replace(desktop_old, desktop_old_new, 1)
-          text = text.replace(mobile_old, mobile_old_new, 1)
           path.write_text(text, encoding='utf-8')
+          PY
 
       - name: Validate and commit
+        shell: bash
         run: |
           git diff --check
           if git diff --quiet -- lib/main.dart; then
