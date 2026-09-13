@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- আবহাওয়া/পেমেন্ট (Razorpay) সহ যেকোনো নেটওয়ার্ক কলের জন্য প্রয়োজন -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- রিমাইন্ডারের নোটিফিকেশন দেখানোর জন্য (Android 13+ এ ব্যবহারকারীর অনুমতি লাগে) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- ফোন রিস্টার্ট হলেও সেট করা রিমাইন্ডার যেন বহাল থাকে -->
@@ -6,6 +8,8 @@
     <!-- ফোনের real-time লোকেশন ধরে সূর্যোদয়/অস্ত, আবহাওয়া ও বৃষ্টি সঠিকভাবে দেখানোর জন্য -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- ভয়েস রিমাইন্ডার ফিচারে কথা শুনে টেক্সটে বদলানোর জন্য (speech_to_text) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
         android:label="বাংলা পঞ্জিকা"
         android:name="${applicationName}"
@@ -38,6 +42,13 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- বিজ্ঞাপনের জন্য AdMob App ID — এটা Google-এর অফিসিয়াল টেস্ট ID,
+             নিজের AdMob একাউন্ট থেকে আসল App ID পেলে এটা বদলে দিন
+             (README.md এ বিস্তারিত ধাপ আছে) -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
+
         <!-- নির্ধারিত সময়ে রিমাইন্ডার বাজানোর জন্য (flutter_local_notifications) -->
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
@@ -51,6 +62,18 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
+
+        <!-- হোম স্ক্রিন উইজেট — আজকের বাংলা তারিখ/তিথি দেখায় -->
+        <receiver
+            android:name=".PanjikaWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/panjika_widget_info"/>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -61,6 +84,21 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- জ্যোতিষী বুকিং-এ WhatsApp/ফোন কল খোলার জন্য (url_launcher,
+             Android 11+ এ package visibility-র জন্য এগুলো লাগে) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <!-- ভয়েস রিমাইন্ডারে speech_to_text প্যাকেজ ফোনের স্পিচ-রিকগনিশন
+             সার্ভিস খুঁজে পেতে (Android 11+ package visibility-র জন্য) -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
         </intent>
     </queries>
 </manifest>

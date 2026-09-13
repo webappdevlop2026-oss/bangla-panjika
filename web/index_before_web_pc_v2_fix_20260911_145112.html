@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+  <meta
+    name="description"
+    content="বাংলা পঞ্জিকা — বাংলা ক্যালেন্ডার, তিথি, পঞ্চাঙ্গ, উৎসব, ছুটির দিন ও দৈনিক তথ্য"
+  >
+  <meta name="theme-color" content="#061327">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="বাংলা পঞ্জিকা">
+
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+
+  <title>বাংলা পঞ্জিকা</title>
+
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 0%, #142849 0%, #071325 40%, #020712 100%);
+    }
+
+    body {
+      min-width: 320px;
+      font-family: Arial, sans-serif;
+    }
+
+    /* Flutter এখন desktop-এ পুরো browser viewport ব্যবহার করবে।
+       আগের 412px phone-frame/iframe wrapper সম্পূর্ণ সরানো হয়েছে। */
+    flutter-view,
+    flt-glass-pane {
+      width: 100% !important;
+      height: 100% !important;
+    }
+  </style>
+</head>
+
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

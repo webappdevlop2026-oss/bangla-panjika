@@ -1,0 +1,422 @@
+﻿class _CalendarDayCellState extends State<_CalendarDayCell> {
+  int _cycleIndex = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCycle();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CalendarDayCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.greg != widget.greg ||
+        oldWidget.events.length != widget.events.length) {
+      _cycleIndex = 0;
+      _startCycle();
+    }
+  }
+
+  void _startCycle() {
+    _timer?.cancel();
+
+    final delay = Duration(
+      milliseconds: 700 + ((widget.bengaliDay * 137) % 1200),
+    );
+
+    Future.delayed(delay, () {
+      if (!mounted) return;
+
+      _timer = Timer.periodic(const Duration(milliseconds: 3200), (_) {
+        if (!mounted) return;
+
+        setState(() {
+          _cycleIndex++;
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final events = widget.events;
+
+    final currentEvent =
+        events.isNotEmpty ? events[_cycleIndex % events.length] : null;
+
+    final categoryColor = widget.primaryCategoryColor(
+      currentEvent != null ? [currentEvent] : const [],
+      widget.isSankranti,
+      widget.isSunday,
+    );
+
+    final numberColor = widget.isSunday
+        ? const Color(0xFFC51F2A)
+        : const Color(0xFF101E59);
+
+    final sun = PanchangCalculator.sunTimes(
+      widget.greg,
+      lat: AppLocation.lat,
+      lon: AppLocation.lon,
+    );
+
+    final tithi = PanchangCalculator.tithiFor(sun.sunrise);
+
+    final nakIndex =
+        PanchangCalculator.nakshatraIndexFor(sun.sunrise);
+
+    final rashiIndex =
+        PanchangCalculator.rashiIndexFor(sun.sunrise);
+
+    final nakshatra =
+        PanchangCalculator.nakshatraNames[nakIndex];
+
+    final rashi =
+        PanchangCalculator.rashiNames[rashiIndex];
+
+    final movingDetails = <String>[
+      '$nakshatra • $rashi',
+      if (currentEvent != null)
+        '${currentEvent.icon} ${currentEvent.label}',
+    ];
+
+    final movingText = movingDetails[
+        _cycleIndex % movingDetails.length];
+
+    final bool isPurnima =
+        currentEvent?.category == 'purnima' ||
+        tithi.name.contains('পূর্ণিমা');
+
+    final bool isAmabasya =
+        currentEvent?.category == 'amabasya' ||
+        tithi.name.contains('অমাবস্যা');
+
+    final bool isEkadashi =
+        currentEvent?.category == 'ekadashi' ||
+        tithi.name.contains('একাদশী');
+
+    String? badgeText;
+    Color badgeColor = const Color(0xFFC51F2A);
+
+    if (isPurnima) {
+      badgeText = 'পূর্ণিমা';
+      badgeColor = const Color(0xFFC51F2A);
+    } else if (isAmabasya) {
+      badgeText = 'অমাবস্যা';
+      badgeColor = const Color(0xFF202020);
+    } else if (isEkadashi) {
+      badgeText = 'একাদশী';
+      badgeColor = const Color(0xFF218C4A);
+    } else if (currentEvent != null) {
+      badgeText = currentEvent.label;
+      badgeColor = const Color(0xFFC51F2A);
+    }
+
+    String? motif;
+
+    if (currentEvent != null) {
+      motif = PanjikaArt.motifFor(
+        currentEvent.label,
+        currentEvent.category,
+        sankranti: widget.isSankranti,
+      );
+    } else if (widget.isSankranti) {
+      motif = 'sun';
+    }
+
+    final englishMonth = const [
+      '',
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
+    ][widget.greg.month];
+
+    final bool marked =
+        widget.isToday || widget.isSelected;
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Opacity(
+        opacity: widget.dim ? 0.35 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          decoration: BoxDecoration(
+            color: widget.highlightTint
+                ? const Color(0xFFFFF2EA)
+                : const Color(0xFFFFFEF8),
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(
+              color: widget.isSelected
+                  ? const Color(0xFF6E3FA3)
+                  : widget.isToday
+                      ? const Color(0xFFD49A21)
+                      : const Color(0xFFCAC5B9),
+              width: marked ? 1.8 : 0.8,
+            ),
+            boxShadow: widget.isToday
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFFD9A52D)
+                          .withValues(alpha: 0.24),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: ClipRect(
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 3, 2, 2),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // English date — reference-এর মতো উপরে।
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: Text(
+                          '${widget.greg.day} $englishMonth',
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: 6.7,
+                            height: 1,
+                            color: widget.isSunday
+                                ? const Color(0xFFC51F2A)
+                                : const Color(0xFF30364B),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 1),
+
+                      // বড় Bengali date।
+                      Expanded(
+                        flex: 5,
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Container(
+                              constraints:
+                                  const BoxConstraints(minWidth: 30),
+                              alignment: Alignment.center,
+                              decoration: widget.isToday
+                                  ? const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Color(0xFFF0B33B),
+                                    )
+                                  : null,
+                              padding: widget.isToday
+                                  ? const EdgeInsets.all(4)
+                                  : EdgeInsets.zero,
+                              child: Text(
+                                widget.bnDay,
+                                style: TextStyle(
+                                  fontSize: 29,
+                                  height: 0.95,
+                                  fontWeight: FontWeight.w900,
+                                  color: widget.isToday
+                                      ? const Color(0xFF2B1A05)
+                                      : (categoryColor ??
+                                          numberColor),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // তিথি।
+                      Flexible(
+                        flex: 2,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            '${tithi.paksha} ${tithi.name}',
+                            maxLines: 1,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 8.2,
+                              height: 1,
+                              color: Color(0xFF252525),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 1),
+
+                      // নক্ষত্র/রাশি/উৎসব পালা করে move করবে।
+                      SizedBox(
+                        height: 12,
+                        width: double.infinity,
+                        child: AnimatedSwitcher(
+                          duration:
+                              const Duration(milliseconds: 500),
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeIn,
+                          transitionBuilder: (child, animation) {
+                            final slide = Tween<Offset>(
+                              begin: const Offset(0.35, 0),
+                              end: Offset.zero,
+                            ).animate(animation);
+
+                            return SlideTransition(
+                              position: slide,
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: FittedBox(
+                            key: ValueKey(
+                              '$movingText-$_cycleIndex',
+                            ),
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              movingText,
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 7.1,
+                                height: 1,
+                                color: Color(0xFF303030),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Special-day badge.
+                if (badgeText != null)
+                  Positioned(
+                    left: 1,
+                    top: 1,
+                    child: ConstrainedBox(
+                      constraints:
+                          const BoxConstraints(maxWidth: 40),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 2.5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeColor,
+                          borderRadius:
+                              BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          badgeText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 5.4,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Special motif — খুব ছোট রাখা হয়েছে যাতে overflow না হয়।
+                if (motif != null)
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: PanjikaArt(
+                      motif,
+                      size: 10,
+                    ),
+                  ),
+
+                if (isAmabasya)
+                  Positioned(
+                    right: 3,
+                    bottom: 3,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF181818),
+                      ),
+                    ),
+                  ),
+
+                if (isPurnima)
+                  Positioned(
+                    right: 3,
+                    bottom: 3,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFFFFEF8),
+                        border: Border.all(
+                          color: const Color(0xFF303030),
+                          width: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                if (widget.isToday)
+                  Positioned(
+                    left: 2,
+                    bottom: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 3,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B2C91),
+                        borderRadius:
+                            BorderRadius.circular(3),
+                      ),
+                      child: const Text(
+                        'আজ',
+                        style: TextStyle(
+                          fontSize: 5.5,
+                          height: 1,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

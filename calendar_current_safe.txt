@@ -1,0 +1,398 @@
+﻿class _CalendarDayCellState extends State<_CalendarDayCell> {
+  int _infoIndex = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startInfoCycle();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CalendarDayCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.greg != widget.greg ||
+        oldWidget.events.length != widget.events.length) {
+      _infoIndex = 0;
+      _startInfoCycle();
+    }
+  }
+
+  void _startInfoCycle() {
+    _timer?.cancel();
+
+    final delay = Duration(
+      milliseconds: 500 + ((widget.bengaliDay * 137) % 1100),
+    );
+
+    Future.delayed(delay, () {
+      if (!mounted) return;
+
+      _timer = Timer.periodic(
+        const Duration(milliseconds: 3000),
+        (_) {
+          if (!mounted) return;
+
+          setState(() {
+            _infoIndex++;
+          });
+        },
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final events = widget.events;
+
+    final currentEvent =
+        events.isNotEmpty ? events[_infoIndex % events.length] : null;
+
+    final catColor = widget.primaryCategoryColor(
+      currentEvent != null ? [currentEvent] : const [],
+      widget.isSankranti,
+      widget.isSunday,
+    );
+
+    final numberColor = widget.isSunday
+        ? const Color(0xFFC62828)
+        : const Color(0xFF14265E);
+
+    final sun = PanchangCalculator.sunTimes(
+      widget.greg,
+      lat: AppLocation.lat,
+      lon: AppLocation.lon,
+    );
+
+    final tithi = PanchangCalculator.tithiFor(sun.sunrise);
+
+    final nakIndex =
+        PanchangCalculator.nakshatraIndexFor(sun.sunrise);
+
+    final rashiIndex =
+        PanchangCalculator.rashiIndexFor(sun.sunrise);
+
+    final nakshatra =
+        PanchangCalculator.nakshatraNames[nakIndex];
+
+    final rashi =
+        PanchangCalculator.rashiNames[rashiIndex];
+
+    final isPurnima =
+        currentEvent?.category == 'purnima' ||
+        tithi.name.contains('পূর্ণিমা');
+
+    final isAmabasya =
+        currentEvent?.category == 'amabasya' ||
+        tithi.name.contains('অমাবস্যা');
+
+    final isEkadashi =
+        currentEvent?.category == 'ekadashi' ||
+        tithi.name.contains('একাদশী');
+
+    final monthShort = const [
+      '',
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
+    ][widget.greg.month];
+
+    final movingInfo = <String>[
+      '$nakshatra • $rashi',
+      if (currentEvent != null)
+        '${currentEvent.icon} ${currentEvent.label}',
+    ];
+
+    final movingText =
+        movingInfo[_infoIndex % movingInfo.length];
+
+    String? badge;
+    Color badgeColor = const Color(0xFFC62828);
+
+    if (isAmabasya) {
+      badge = 'অমাবস্যা';
+      badgeColor = const Color(0xFF222222);
+    } else if (isPurnima) {
+      badge = 'পূর্ণিমা';
+    } else if (isEkadashi) {
+      badge = 'একাদশী';
+      badgeColor = const Color(0xFF298C50);
+    } else if (currentEvent != null) {
+      badge = currentEvent.label;
+    }
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Opacity(
+        opacity: widget.dim ? 0.35 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          decoration: BoxDecoration(
+            color: widget.highlightTint
+                ? const Color(0xFFFFF1EC)
+                : const Color(0xFFFFFEF7),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: widget.isSelected
+                  ? const Color(0xFF5E328E)
+                  : widget.isToday
+                      ? const Color(0xFFD99C25)
+                      : const Color(0xFFCFC8B8),
+              width: widget.isSelected || widget.isToday
+                  ? 1.7
+                  : 0.8,
+            ),
+            boxShadow: widget.isToday
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFFFFC342)
+                          .withValues(alpha: 0.25),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: ClipRect(
+            child: Stack(
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(2, 3, 2, 2),
+                  child: Column(
+                    children: [
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: Text(
+                          '${widget.greg.day} $monthShort',
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: 6.5,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                            color: widget.isSunday
+                                ? const Color(0xFFC62828)
+                                : const Color(0xFF343949),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 1),
+
+                      Expanded(
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Container(
+                              alignment: Alignment.center,
+                              padding: widget.isToday
+                                  ? const EdgeInsets.all(5)
+                                  : EdgeInsets.zero,
+                              decoration: widget.isToday
+                                  ? const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Color(0xFFF1B53F),
+                                    )
+                                  : null,
+                              child: Text(
+                                widget.bnDay,
+                                style: TextStyle(
+                                  fontSize: 31,
+                                  height: 0.92,
+                                  fontWeight: FontWeight.w900,
+                                  color: widget.isToday
+                                      ? const Color(0xFF251702)
+                                      : (catColor ??
+                                          numberColor),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${tithi.paksha} ${tithi.name}',
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 8.2,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF272727),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 2),
+
+                      SizedBox(
+                        height: 12,
+                        width: double.infinity,
+                        child: AnimatedSwitcher(
+                          duration:
+                              const Duration(milliseconds: 450),
+                          transitionBuilder:
+                              (child, animation) {
+                            final slide = Tween<Offset>(
+                              begin: const Offset(0.3, 0),
+                              end: Offset.zero,
+                            ).animate(animation);
+
+                            return SlideTransition(
+                              position: slide,
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: FittedBox(
+                            key: ValueKey(
+                              '$movingText-$_infoIndex',
+                            ),
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              movingText,
+                              maxLines: 1,
+                              style: const TextStyle(
+                                fontSize: 7,
+                                height: 1,
+                                color: Color(0xFF333333),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                if (badge != null)
+                  Positioned(
+                    left: 1,
+                    top: 1,
+                    child: ConstrainedBox(
+                      constraints:
+                          const BoxConstraints(maxWidth: 39),
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(
+                          horizontal: 3,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeColor,
+                          borderRadius:
+                              BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          badge,
+                          maxLines: 1,
+                          overflow:
+                              TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 5.3,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                if (isAmabasya)
+                  Positioned(
+                    right: 3,
+                    bottom: 3,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF111111),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+
+                if (isPurnima)
+                  Positioned(
+                    right: 3,
+                    bottom: 3,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFEF7),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF333333),
+                          width: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                if (isEkadashi)
+                  const Positioned(
+                    right: 2,
+                    bottom: 1,
+                    child: Text(
+                      '🌿',
+                      style: TextStyle(fontSize: 9),
+                    ),
+                  ),
+
+                if (widget.isToday)
+                  Positioned(
+                    left: 2,
+                    bottom: 2,
+                    child: Container(
+                      padding:
+                          const EdgeInsets.symmetric(
+                        horizontal: 3,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF633184),
+                        borderRadius:
+                            BorderRadius.circular(3),
+                      ),
+                      child: const Text(
+                        'আজ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 5.5,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

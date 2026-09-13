@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data' show Uint8List;
@@ -7,8 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
-import 'package:flutter/services.dart'
-    show SystemSound, SystemSoundType, rootBundle;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
@@ -41,14 +40,6 @@ Future<void> main() async {
 // =====================================================================
 // সেটিংস ও সংরক্ষণ — সব পছন্দ ফোনে সেভ থাকে, অ্যাপ বন্ধ করলেও মুছে যায় না
 // =====================================================================
-
-/// লেখা যত বড় করা হয়েছে, গ্রিডের ঘরও তত বড় হবে — নাহলে বড় লেখা ঘর
-/// ছাপিয়ে গিয়ে হলুদ-কালো overflow দাগ দেখাত। ১.৫ গুণের বেশি বাড়ে না,
-/// যাতে ঘরগুলো অস্বাভাবিক লম্বা না হয়ে যায়।
-double _tsFactor(BuildContext context) {
-  final f = MediaQuery.of(context).textScaler.scale(100) / 100;
-  return f.clamp(1.0, 1.5);
-}
 
 class AppSettings extends ChangeNotifier {
   AppSettings._();
@@ -1128,17 +1119,18 @@ class BanglaPanjikaApp extends StatelessWidget {
             scrolledUnderElevation: 0,
           ),
         ),
-        // বয়স্ক ব্যবহারকারীদের কথা ভেবে পুরো অ্যাপেই লেখা ডিজাইন-সাইজের
-        // চেয়ে বড় (১.৩২ গুণ) দেখানো হয় — ফোনের সিস্টেম ফন্ট যতই ছোট সেট
-        // করা থাক। "বড় লেখা মোড" চালু করলে আরও বড় (১.৫ গুণ)। উপরের সীমা
-        // রাখা আছে যাতে কার্ড/বাটনের লেআউট ভেঙে না যায়।
+        // ফোনের সিস্টেম ফন্ট-সাইজ যতই ছোট সেট করা থাকুক (কম বয়সীদের ফোনে
+        // এমন থাকতে পারে), অ্যাপের লেখা কখনো ডিজাইন করা সাইজের চেয়ে ছোট
+        // দেখাবে না (readability floor) — আবার কেউ সিস্টেম ফন্ট অনেক বড়
+        // করে রাখলেও ১.৩ গুণের বেশি বড় হবে না, যাতে কার্ড/বাটনের লেআউট
+        // ভেঙে না যায়
         builder: (context, child) {
           final mq = MediaQuery.of(context);
           return MediaQuery(
             data: mq.copyWith(
               textScaler: mq.textScaler.clamp(
-                minScaleFactor: Phase14Prefs.elderMode ? 1.50 : 1.32,
-                maxScaleFactor: Phase14Prefs.elderMode ? 1.90 : 1.65,
+                minScaleFactor: Phase14Prefs.elderMode ? 1.14 : 1.0,
+                maxScaleFactor: Phase14Prefs.elderMode ? 1.55 : 1.3,
               ),
             ),
             child: child!,
@@ -2541,7 +2533,7 @@ class LanguageScreen extends StatelessWidget {
   Widget _buildGlassButton(BuildContext context, String title) {
     return Container(
       width: double.infinity,
-      height: 60 * _tsFactor(context),
+      height: 60,
       decoration: BoxDecoration(
         color: const Color(0xFF091A34).withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(20),
@@ -2620,7 +2612,7 @@ class OnboardingScreen extends StatelessWidget {
             ),
             SizedBox(
               width: double.infinity,
-              height: 58 * _tsFactor(context),
+              height: 58,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFD36E),
@@ -2757,7 +2749,7 @@ class _LocationSelectScreenState extends State<LocationSelectScreen> {
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              height: 58 * _tsFactor(context),
+              height: 58,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFD36E),
@@ -2845,7 +2837,7 @@ class PermissionScreen extends StatelessWidget {
               children: [
                 SizedBox(
                   width: double.infinity,
-                  height: 58 * _tsFactor(context),
+                  height: 58,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFFFD36E),
@@ -2941,7 +2933,7 @@ class _ThemeSelectScreenState extends State<ThemeSelectScreen> {
                         children: [
                           Container(
                             width: 40,
-                            height: 40 * _tsFactor(context),
+                            height: 40,
                             decoration: BoxDecoration(
                               color: theme['color'] as Color,
                               shape: BoxShape.circle,
@@ -2973,7 +2965,7 @@ class _ThemeSelectScreenState extends State<ThemeSelectScreen> {
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              height: 58 * _tsFactor(context),
+              height: 58,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFFFD36E),
@@ -3219,460 +3211,6 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    if (kIsWeb && width >= 900) {
-      return _buildDesktopHome(context);
-    }
-    return _buildMobileHome(context);
-  }
-
-  Widget _buildDesktopHome(BuildContext context) {
-    return CosmicBackground(
-      child: SafeArea(
-        child: Row(
-          children: [
-            SizedBox(
-              width: 270,
-              child: _SideMenu(
-                onSelect: (title) => _handleMenuSelect(context, title),
-              ),
-            ),
-            Expanded(
-              child: Column(
-                children: [
-                  _desktopTopBar(context),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final twoColumns = constraints.maxWidth >= 980;
-                        return SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(26, 22, 26, 36),
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 1480),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _desktopQuickLinks(context),
-                                  const SizedBox(height: 20),
-                                  if (twoColumns)
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Expanded(
-                                          flex: 7,
-                                          child: _desktopPrimaryColumn(),
-                                        ),
-                                        const SizedBox(width: 20),
-                                        Expanded(
-                                          flex: 5,
-                                          child: _desktopSecondaryColumn(),
-                                        ),
-                                      ],
-                                    )
-                                  else ...[
-                                    _desktopPrimaryColumn(),
-                                    const SizedBox(height: 20),
-                                    _desktopSecondaryColumn(),
-                                  ],
-                                  const SizedBox(height: 24),
-                                  Center(
-                                    child: Text(
-                                      'বাংলা পঞ্জিকা • বাংলা ক্যালেন্ডার, পঞ্চাঙ্গ, উৎসব ও দৈনিক তথ্য',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.48,
-                                        ),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _desktopTopBar(BuildContext context) {
-    final now = DateTime.now();
-    final bengali = BengaliDateUtil.monthInfoFor(now);
-    final bengaliDay = now.difference(bengali.start).inDays + 1;
-    return Container(
-      height: 82,
-      padding: const EdgeInsets.symmetric(horizontal: 26),
-      decoration: BoxDecoration(
-        color: const Color(0xFF061327).withValues(alpha: 0.78),
-        border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Text(
-            'বাংলা পঞ্জিকা',
-            style: TextStyle(
-              color: Color(0xFFFFD36E),
-              fontSize: 25,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Container(
-            width: 1,
-            height: 28,
-            color: Colors.white.withValues(alpha: 0.14),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              '${bnNum(bengaliDay)} ${bengali.name} ${bnNum(bengali.year)}  •  ${bnNum(now.day)} ${gregMonthBn(now.month)} ${bnNum(now.year)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          _desktopHeaderButton(
-            icon: Icons.calendar_month_rounded,
-            label: 'ক্যালেন্ডার',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const BengaliCalendarScreen()),
-            ),
-          ),
-          const SizedBox(width: 10),
-          _desktopHeaderButton(
-            icon: Icons.event_available_rounded,
-            label: 'ছুটির দিন',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const HolidayScreen()),
-            ),
-          ),
-          const SizedBox(width: 10),
-          _desktopHeaderButton(
-            icon: Icons.person_outline_rounded,
-            label: 'প্রোফাইল',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _desktopHeaderButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 17),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.16)),
-        backgroundColor: Colors.white.withValues(alpha: 0.045),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
-      ),
-    );
-  }
-
-  Widget _desktopQuickLinks(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 1120;
-        final items =
-            <
-              ({
-                String emoji,
-                String title,
-                String subtitle,
-                VoidCallback onTap,
-              })
-            >[
-              (
-                emoji: '📅',
-                title: 'বাংলা ক্যালেন্ডার',
-                subtitle: 'মাস, তিথি ও বিশেষ দিন',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const BengaliCalendarScreen(),
-                  ),
-                ),
-              ),
-              (
-                emoji: '🪷',
-                title: 'আজকের পঞ্চাঙ্গ',
-                subtitle: 'সূর্যোদয়, তিথি, নক্ষত্র',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const TodaySmartScreen()),
-                ),
-              ),
-              (
-                emoji: '🇮🇳',
-                title: 'ভারতীয় ছুটির দিন',
-                subtitle: 'বছরভিত্তিক ছুটির তালিকা',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HolidayScreen()),
-                ),
-              ),
-              (
-                emoji: '✨',
-                title: 'সব সেবা',
-                subtitle: 'পঞ্জিকার সব টুল এক জায়গায়',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SuperServicesScreen(),
-                  ),
-                ),
-              ),
-            ];
-
-        if (compact) {
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: items
-                .map(
-                  (item) => SizedBox(
-                    width: (constraints.maxWidth - 12) / 2,
-                    child: _desktopQuickCard(
-                      emoji: item.emoji,
-                      title: item.title,
-                      subtitle: item.subtitle,
-                      onTap: item.onTap,
-                    ),
-                  ),
-                )
-                .toList(),
-          );
-        }
-
-        return Row(
-          children: [
-            for (var i = 0; i < items.length; i++) ...[
-              Expanded(
-                child: _desktopQuickCard(
-                  emoji: items[i].emoji,
-                  title: items[i].title,
-                  subtitle: items[i].subtitle,
-                  onTap: items[i].onTap,
-                ),
-              ),
-              if (i != items.length - 1) const SizedBox(width: 12),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _desktopQuickCard({
-    required String emoji,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 92),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0A1A34).withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: const Color(0xFFFFD36E).withValues(alpha: 0.16),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.16),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 27)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white60,
-                      fontSize: 11.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _desktopPrimaryColumn() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _HeroDateCard(),
-        const SizedBox(height: 14),
-        const _HistoryBanner(),
-        const SizedBox(height: 14),
-        _TickerBar(),
-        const SizedBox(height: 14),
-        const _HomeLiveTimingSystem(),
-        const SizedBox(height: 14),
-        const _Phase14DynamicHomeCard(),
-        const SizedBox(height: 14),
-        const Phase15AmbientSolarStrip(),
-        const SizedBox(height: 18),
-        const _SectionTitle('আজকের পঞ্চাঙ্গ'),
-        const SizedBox(height: 10),
-        _desktopPanchangRow(),
-      ],
-    );
-  }
-
-  Widget _desktopSecondaryColumn() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _Phase5HomeCommandCenter(),
-        const SizedBox(height: 14),
-        const _Phase6DailyIntelligenceCard(),
-        const SizedBox(height: 14),
-        const _Super30HomeCard(),
-        const SizedBox(height: 14),
-        const _Phase18HomeCard(),
-        const SizedBox(height: 14),
-        const _AllServicesHomeButton(),
-        const SizedBox(height: 20),
-        const _SectionTitle('পরবর্তী উৎসব ও প্রস্তুতি'),
-        const SizedBox(height: 10),
-        const _Phase5FestivalPulseCard(),
-        const SizedBox(height: 20),
-        const _SectionTitle('জীবন্ত বাংলা গ্রাম • LIVE'),
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: const VillageHorizonScene(height: 300),
-        ),
-        const SizedBox(height: 14),
-        const AdBannerWidget(),
-      ],
-    );
-  }
-
-  Widget _desktopPanchangRow() {
-    String sunriseTxt;
-    String sunsetTxt;
-    String moonriseTxt;
-    try {
-      final now = DateTime.now();
-      final sun = PanchangCalculator.sunTimes(now);
-      final moonAge = PanchangCalculator.moonAgeDays(now);
-      final moonrise = sun.sunrise.add(
-        Duration(minutes: (moonAge * 48.8).round()),
-      );
-      sunriseTxt = bnTime12(sun.sunrise);
-      sunsetTxt = bnTime12(sun.sunset);
-      moonriseTxt = bnTime12(moonrise);
-    } catch (_) {
-      final now = DateTime.now();
-      final fallbackLat =
-          AppLocation.coordinates[AppLocation.district]?.lat ?? 22.5726;
-      final fallbackLon =
-          AppLocation.coordinates[AppLocation.district]?.lon ?? 88.3639;
-      final sun = PanchangCalculator.sunTimes(
-        now,
-        lat: fallbackLat,
-        lon: fallbackLon,
-      );
-      final moonAge = PanchangCalculator.moonAgeDays(now);
-      final moonrise = sun.sunrise.add(
-        Duration(minutes: (moonAge * 48.8).round()),
-      );
-      sunriseTxt = bnTime12(sun.sunrise);
-      sunsetTxt = bnTime12(sun.sunset);
-      moonriseTxt = bnTime12(moonrise);
-    }
-
-    return Row(
-      children: [
-        Expanded(
-          child: _MiniPanchang(
-            emoji: '🌅',
-            value: sunriseTxt,
-            label: 'সূর্যোদয়',
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _MiniPanchang(
-            emoji: '🌇',
-            value: sunsetTxt,
-            label: 'সূর্যাস্ত',
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _MiniPanchang(
-            emoji: '🌙',
-            value: moonriseTxt,
-            label: 'চন্দ্রোদয়',
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMobileHome(BuildContext context) {
     return CosmicBackground(
       child: Stack(
         children: [
@@ -3714,8 +3252,6 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const _Phase6DailyIntelligenceCard(),
               const SizedBox(height: 12),
               const _Super30HomeCard(),
-              const SizedBox(height: 12),
-              const _Phase18HomeCard(),
               const SizedBox(height: 12),
               const _AllServicesHomeButton(),
               const SizedBox(height: 20),
@@ -3823,7 +3359,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 if (i == 3) {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const HolidayScreen()),
+                    MaterialPageRoute(
+                      builder: (_) => const SuperServicesScreen(),
+                    ),
                   );
                   return;
                 }
@@ -3865,7 +3403,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Widget _iconButton(IconData icon, VoidCallback onTap) {
     return Container(
       width: 42,
-      height: 42 * _tsFactor(context),
+      height: 42,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(14),
@@ -4980,7 +4518,7 @@ class _HistoryBannerState extends State<_HistoryBanner> {
               children: [
                 Container(
                   width: 50,
-                  height: 50 * _tsFactor(context),
+                  height: 50,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
@@ -5705,7 +5243,7 @@ class _HomeLiveTimingSystemState extends State<_HomeLiveTimingSystem> {
           ],
           const SizedBox(height: 10),
           SizedBox(
-            height: 54 * _tsFactor(context),
+            height: 54,
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: windows
@@ -5762,71 +5300,6 @@ class _HeroDateCard extends StatefulWidget {
 class _HeroDateCardState extends State<_HeroDateCard> {
   bool _speaking = false;
 
-  @override
-  void initState() {
-    super.initState();
-    // আজকের তাপমাত্রা — অ্যাপে আগে থেকেই থাকা WeatherService ও
-    // LocationService ব্যবহার করা হচ্ছে, নতুন কোনো API/প্যাকেজ নয়
-    WeatherService.instance.addListener(_onWeather);
-    LocationService.instance.addListener(_onWeather);
-    LocationService.instance.refresh();
-    WeatherService.instance.refresh();
-  }
-
-  @override
-  void dispose() {
-    WeatherService.instance.removeListener(_onWeather);
-    LocationService.instance.removeListener(_onWeather);
-    super.dispose();
-  }
-
-  void _onWeather() {
-    if (mounted) setState(() {});
-  }
-
-  /// হেডারে আজকের তাপমাত্রা — GPS/জেলার প্রকৃত অবস্থান অনুযায়ী।
-  /// ডেটা আসার আগে "লোড হচ্ছে…" দেখায়, কখনো বানানো মান দেখায় না।
-  Widget _tempChip() {
-    final temp = WeatherService.instance.tempC;
-    final loading = temp == null;
-    final raining = WeatherService.instance.isRaining;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFD36E).withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: const Color(0xFFFFD36E).withValues(alpha: 0.40),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (raining && !loading)
-              const Icon(
-                Icons.water_drop_rounded,
-                size: 13,
-                color: Color(0xFFFFD36E),
-              )
-            else
-              const PanjikaArt('sun', size: 15),
-            const SizedBox(width: 5),
-            Text(
-              loading ? 'তাপমাত্রা লোড হচ্ছে…' : 'আজ ${bnNum(temp.round())}°C',
-              style: TextStyle(
-                color: const Color(0xFFFFD36E),
-                fontSize: loading ? 10.5 : 12.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _toggleSpeak() async {
     if (_speaking) {
       await TtsService.instance.stop();
@@ -5874,8 +5347,6 @@ class _HeroDateCardState extends State<_HeroDateCard> {
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ),
-              // আজকের তাপমাত্রা
-              _tempChip(),
               InkWell(
                 onTap: _toggleSpeak,
                 borderRadius: BorderRadius.circular(999),
@@ -5920,41 +5391,21 @@ class _HeroDateCardState extends State<_HeroDateCard> {
             style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
           const SizedBox(height: 10),
-          InkWell(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PanchangOccasionDetailScreen(date: now),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7D4A10).withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: const Color(0xFFFFC76A).withValues(alpha: 0.4),
               ),
             ),
-            borderRadius: BorderRadius.circular(999),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                color: const Color(0xFF7D4A10).withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: const Color(0xFFFFC76A).withValues(alpha: 0.4),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${tithi.paksha} পক্ষ • ${tithi.name} তিথি',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    size: 17,
-                    color: Color(0xFFFFD36E),
-                  ),
-                ],
+            child: Text(
+              '${tithi.paksha} পক্ষ • ${tithi.name} তিথি',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -6070,7 +5521,7 @@ class _LiveInfoRow extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           SizedBox(
-            height: 30 * _tsFactor(context),
+            height: 30,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: items.length,
@@ -6158,7 +5609,7 @@ class _TickerBarState extends State<_TickerBar>
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 40 * _tsFactor(context),
+      height: 40,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -6295,7 +5746,7 @@ class _FestivalCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 72 * _tsFactor(context),
+              height: 72,
               width: double.infinity,
               alignment: Alignment.center,
               decoration: const BoxDecoration(
@@ -6813,7 +6264,7 @@ class _BottomNavBar extends StatelessWidget {
     ['🏠', 'হোম'],
     ['📅', 'ক্যালেন্ডার'],
     ['☀️', 'আজ'],
-    ['🎊', 'ছুটির দিন'],
+    ['✨', 'সব সেবা'],
     ['👤', 'প্রোফাইল'],
   ];
 
@@ -6868,7 +6319,6 @@ class _BottomNavBar extends StatelessWidget {
                 ),
               ),
             ),
-            // index ৩ এখন "ছুটির দিন" ("সব সেবা" হোমের কার্ড থেকে খোলে)
             _navItem(3),
             _navItem(4),
           ],
@@ -6887,17 +6337,12 @@ class _BottomNavBar extends StatelessWidget {
         children: [
           Text(data[0], style: const TextStyle(fontSize: 20)),
           const SizedBox(height: 3),
-          // ৫টা আইটেম পাশাপাশি — লেখা বড় করা থাকলেও যেন কেটে না যায়
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              data[1],
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 11,
-                color: active ? const Color(0xFFFFD36E) : Colors.white70,
-                fontWeight: active ? FontWeight.w700 : FontWeight.normal,
-              ),
+          Text(
+            data[1],
+            style: TextStyle(
+              fontSize: 11,
+              color: active ? const Color(0xFFFFD36E) : Colors.white70,
+              fontWeight: active ? FontWeight.w700 : FontWeight.normal,
             ),
           ),
         ],
@@ -7207,7 +6652,7 @@ class _WorldClockScreenState extends State<WorldClockScreen> {
                     children: [
                       SizedBox(
                         width: 68,
-                        height: 68 * _tsFactor(context),
+                        height: 68,
                         child: CustomPaint(painter: _AnalogClockPainter(local)),
                       ),
                       const SizedBox(width: 12),
@@ -7999,7 +7444,7 @@ class _RashiScreenState extends State<RashiScreen> {
                       ),
                       const SizedBox(height: 10),
                       SizedBox(
-                        height: 76 * _tsFactor(context),
+                        height: 76,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: 12,
@@ -8073,7 +7518,7 @@ class _RashiScreenState extends State<RashiScreen> {
                         children: [
                           Container(
                             width: 72,
-                            height: 72 * _tsFactor(context),
+                            height: 72,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: const Color(
@@ -8128,7 +7573,7 @@ class _RashiScreenState extends State<RashiScreen> {
                           ),
                           SizedBox(
                             width: 76,
-                            height: 76 * _tsFactor(context),
+                            height: 76,
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
@@ -8266,7 +7711,7 @@ class _RashiScreenState extends State<RashiScreen> {
                   crossAxisCount: 5,
                   crossAxisSpacing: 6,
                   mainAxisSpacing: 6,
-                  childAspectRatio: 0.95 / _tsFactor(context),
+                  childAspectRatio: 0.95,
                   children: [
                     _scoreTile('❤️', 'সম্পর্ক', relation),
                     _scoreTile('💼', 'কাজ', work),
@@ -9708,7 +9153,7 @@ class _KundliScreenState extends State<KundliScreen> {
                     crossAxisCount: 4,
                     crossAxisSpacing: 6,
                     mainAxisSpacing: 6,
-                    childAspectRatio: 0.85 / _tsFactor(context),
+                    childAspectRatio: 0.85,
                     children: List.generate(12, (i) {
                       final grahas = placements?[i] ?? const <String>[];
                       final isMoonHere = i == moonIdx;
@@ -12184,11 +11629,8 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
     String festival = '';
     try {
       final events = BengaliCalendarData.eventsFor(now);
-      final festivalEvents = events
-          .where((e) => e.category == 'general')
-          .toList();
-      if (festivalEvents.isNotEmpty) {
-        festival = festivalEvents.take(2).map((e) => e.label).join(' • ');
+      if (events.isNotEmpty) {
+        festival = events.take(2).map((e) => e.label).join(' • ');
       }
     } catch (_) {}
 
@@ -15268,7 +14710,7 @@ class _TodaySmartLaunchCard extends StatelessWidget {
           children: [
             Container(
               width: 46,
-              height: 46 * _tsFactor(context),
+              height: 46,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: const Color(0xFFFFD36E).withValues(alpha: 0.12),
@@ -15416,10 +14858,6 @@ class TodaySmartScreen extends StatelessWidget {
     );
     final (tithiStart, tithiEnd) = PanchangCalculator.tithiTiming(sun.sunrise);
     final events = BengaliCalendarData.eventsFor(now);
-    // আজ যাঁদের জন্ম বা প্রয়াণ দিন — আলাদা পর্দায় না গিয়েও এক নজরে দেখা যাবে
-    final anniversaries = _historicalFigures
-        .where((f) => f.month == now.month && f.day == now.day)
-        .toList();
 
     final timeline = <_PanchangTimelineItem>[
       _PanchangTimelineItem(sun.sunrise, '🌅', 'সূর্যোদয়'),
@@ -15668,120 +15106,6 @@ class TodaySmartScreen extends StatelessWidget {
                               )
                               .toList(),
                         ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _glass(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              '🕯️ আজ যাঁদের জন্ম ও প্রয়াণ দিন',
-                              style: TextStyle(
-                                color: Color(0xFFFFD36E),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const TodayHistoryScreen(),
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF9DD6FF),
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 0),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
-                              'সব দেখুন',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 9),
-                      if (anniversaries.isEmpty)
-                        const Text(
-                          'আজ তালিকায় কোনো মনীষীর জন্ম বা প্রয়াণ দিন নেই।',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        )
-                      else
-                        ...anniversaries.map((f) {
-                          final isBirth = f.eventType.contains('জন্ম');
-                          final tone = isBirth
-                              ? const Color(0xFF7BE3AE)
-                              : const Color(0xFFFFB27A);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 9),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  f.emoji,
-                                  style: const TextStyle(fontSize: 17),
-                                ),
-                                const SizedBox(width: 9),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        f.name,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      Text(
-                                        f.role,
-                                        style: const TextStyle(
-                                          color: Colors.white60,
-                                          fontSize: 10.5,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: tone.withValues(alpha: 0.16),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: tone.withValues(alpha: 0.35),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    f.eventType,
-                                    style: TextStyle(
-                                      color: tone,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
                     ],
                   ),
                 ),
@@ -16271,7 +15595,7 @@ class _MonthSummaryScreenState extends State<MonthSummaryScreen> {
                         crossAxisCount: 3,
                         crossAxisSpacing: 8,
                         mainAxisSpacing: 8,
-                        childAspectRatio: 1.05 / _tsFactor(context),
+                        childAspectRatio: 1.05,
                         children: [
                           _stat('🎉', 'উৎসব', counts['general'] ?? 0),
                           _stat('🌿', 'একাদশী', counts['ekadashi'] ?? 0),
@@ -16318,7 +15642,7 @@ class _MonthSummaryScreenState extends State<MonthSummaryScreen> {
                         children: [
                           Container(
                             width: 44,
-                            height: 44 * _tsFactor(context),
+                            height: 44,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: const Color(
@@ -16943,7 +16267,7 @@ class FestivalCountdownScreen extends StatelessWidget {
                       : '${bnNum(left)} দিন বাকি';
                   return Container(
                     margin: const EdgeInsets.only(bottom: 9),
-                    padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+                    padding: const EdgeInsets.all(13),
                     decoration: BoxDecoration(
                       color: const Color(0xFF07172F).withValues(alpha: 0.60),
                       borderRadius: BorderRadius.circular(15),
@@ -17007,778 +16331,6 @@ class FestivalCountdownScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class PanchangOccasionDetailScreen extends StatefulWidget {
-  final DateTime date;
-  final CalendarEvent? event;
-
-  const PanchangOccasionDetailScreen({
-    super.key,
-    required this.date,
-    this.event,
-  });
-
-  @override
-  State<PanchangOccasionDetailScreen> createState() =>
-      _PanchangOccasionDetailScreenState();
-}
-
-class _PanchangOccasionDetailScreenState
-    extends State<PanchangOccasionDetailScreen> {
-  DateTime _actual(DateTime value) {
-    if (!value.isUtc) return value;
-    return value.subtract(const Duration(hours: 5, minutes: 30)).toLocal();
-  }
-
-  String? _wantedTithiName() {
-    final e = widget.event;
-    final label = e?.label ?? '';
-    final category = e?.category ?? '';
-
-    if (category == 'amabasya' || label.contains('অমাবস্যা')) {
-      return 'অমাবস্যা';
-    }
-    if (category == 'purnima' || label.contains('পূর্ণিমা')) {
-      return 'পূর্ণিমা';
-    }
-    if (category == 'ekadashi' || label.contains('একাদশী')) {
-      return 'একাদশী';
-    }
-    if (label.contains('অষ্টমী')) return 'অষ্টমী';
-    if (label.contains('চতুর্দশী')) return 'চতুর্দশী';
-    return null;
-  }
-
-  DateTime _referenceMoment() {
-    final wanted = _wantedTithiName();
-
-    // কোনো event যদি নির্দিষ্ট তিথির হয়, দিনের মধ্যে সেই তিথি চলার
-    // প্রকৃত সময় খুঁজে নিই। এতে sunrise-এ তিথি বদলে গেলেও ভুল detail
-    // খুলবে না।
-    if (wanted != null) {
-      for (int hour = 0; hour < 24; hour += 2) {
-        final probe = DateTime(
-          widget.date.year,
-          widget.date.month,
-          widget.date.day,
-          hour,
-        );
-        if (PanchangCalculator.tithiFor(probe).name == wanted) {
-          return probe;
-        }
-      }
-    }
-
-    final sun = PanchangCalculator.sunTimes(
-      widget.date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    return _actual(sun.sunrise);
-  }
-
-  String _occasionName(
-    TithiInfo tithi,
-    BengaliMonthInfo info,
-    List<CalendarEvent> events,
-  ) {
-    final generic = <String>{
-      'অমাবস্যা',
-      'পূর্ণিমা',
-      'একাদশী',
-      'অষ্টমী',
-      'চতুর্দশী',
-    };
-
-    final selectedLabel = widget.event?.label;
-    final specialLabel =
-        selectedLabel != null &&
-            selectedLabel.trim().isNotEmpty &&
-            !generic.contains(selectedLabel)
-        ? selectedLabel
-        : events
-              .map((e) => e.label)
-              .firstWhere((x) => !generic.contains(x), orElse: () => '');
-
-    String tithiName;
-    if (tithi.name == 'অমাবস্যা' || tithi.name == 'পূর্ণিমা') {
-      tithiName = '${info.name} ${tithi.name}';
-    } else if (tithi.name == 'একাদশী') {
-      tithiName = '${info.name} ${tithi.paksha} পক্ষের একাদশী';
-    } else {
-      tithiName = '${tithi.paksha} পক্ষ • ${tithi.name}';
-    }
-
-    if (specialLabel.isNotEmpty) {
-      return '$specialLabel • $tithiName';
-    }
-    return tithiName;
-  }
-
-  Map<String, dynamic> _guideFor(TithiInfo tithi, String eventLabel) {
-    final label = eventLabel;
-
-    if (tithi.name == 'অমাবস্যা' || label.contains('অমাবস্যা')) {
-      return {
-        'importance':
-            'কৃষ্ণপক্ষের শেষ তিথি। বহু পরিবারে এই দিন পিতৃস্মরণ, তর্পণ, দান, প্রার্থনা বা ইষ্টদেবতার উপাসনার প্রচলন আছে। নির্দিষ্ট আচার অঞ্চল ও পারিবারিক রীতি অনুযায়ী বদলে যায়।',
-        'vrata':
-            'অমাবস্যার জন্য একটিমাত্র সর্বজনীন ব্রত-নিয়ম নেই। পরিবারে প্রচলিত ব্রত, পিতৃকর্ম বা পূজা থাকলে সেই রীতিই অনুসরণ করা উচিত।',
-        'steps': [
-          'স্নান ও পরিষ্কার-পরিচ্ছন্নতার পর সংকল্প/প্রার্থনা',
-          'ইষ্টদেবতা বা পারিবারিক দেবতার পূজা',
-          'পারিবারিক প্রথা থাকলে পিতৃস্মরণ/তর্পণ',
-          'প্রদীপ, জপ, প্রার্থনা ও সামর্থ্য অনুযায়ী দান',
-          'দিন শেষে শান্তভাবে প্রার্থনা/নামস্মরণ',
-        ],
-        'materials': [
-          'প্রদীপ',
-          'ফুল',
-          'জল',
-          'ফল',
-          'তিল (যদি পারিবারিক তর্পণ-রীতিতে লাগে)',
-          'ধূপ/প্রসাদ — পারিবারিক নিয়ম অনুযায়ী',
-        ],
-        'good': [
-          'পিতৃস্মরণ ও প্রার্থনা',
-          'দান ও সেবামূলক কাজ',
-          'জপ/ধ্যান/পাঠ',
-          'পারিবারিক রীতি মেনে পূজা',
-        ],
-        'avoid': [
-          'পারিবারিক বা সম্প্রদায়গত বিধি না জেনে কঠোর আচার শুরু করা',
-          'শারীরিক সামর্থ্য বিবেচনা না করে কঠোর উপবাস করা',
-          'শুধু পঞ্জিকার ভিত্তিতে বড় আর্থিক/চিকিৎসা/আইনি সিদ্ধান্ত নেওয়া',
-        ],
-      };
-    }
-
-    if (tithi.name == 'পূর্ণিমা' || label.contains('পূর্ণিমা')) {
-      return {
-        'importance':
-            'শুক্লপক্ষের শেষ তিথি। পূর্ণিমায় পূজা, জপ, পাঠ, দান, সংযম ও চন্দ্রদর্শনের বিভিন্ন আঞ্চলিক ও পারিবারিক প্রথা আছে।',
-        'vrata':
-            'পূর্ণিমা-ব্রতের নিয়ম দেবতা, মাস ও পরিবারভেদে আলাদা হতে পারে। সংশ্লিষ্ট পূর্ণিমার বিশেষ উৎসব থাকলে সেই উৎসবের নিয়ম প্রাধান্য পাবে।',
-        'steps': [
-          'স্নান ও সংকল্প',
-          'ইষ্টদেবতার পূজা/পাঠ',
-          'প্রদীপ ও প্রার্থনা',
-          'সামর্থ্য অনুযায়ী দান',
-          'পরিবারে প্রচলন থাকলে সন্ধ্যায় চন্দ্রদর্শন/অর্ঘ্য',
-        ],
-        'materials': ['প্রদীপ', 'ফুল', 'ফল', 'জল', 'ধূপ', 'প্রসাদ'],
-        'good': ['জপ ও পাঠ', 'দান', 'শান্ত প্রার্থনা', 'পারিবারিক পূজা'],
-        'avoid': [
-          'নির্দিষ্ট ব্রত-নিয়ম যাচাই না করে কঠোর বিধি পালন',
-          'শারীরিক সামর্থ্য বিবেচনা না করে উপবাস',
-        ],
-      };
-    }
-
-    if (tithi.name == 'একাদশী' || label.contains('একাদশী')) {
-      return {
-        'importance':
-            'একাদশী বহু বৈষ্ণব পরম্পরায় উপবাস, সংযম, নামজপ ও বিষ্ণু/নারায়ণ উপাসনার গুরুত্বপূর্ণ তিথি।',
-        'vrata':
-            'উপবাসের ধরন এবং পরের দিন পারণের সময় সম্প্রদায়ভেদে আলাদা। নিজের পারিবারিক/সম্প্রদায়ের পঞ্জিকা ও রীতি অনুসরণ করুন।',
-        'steps': [
-          'সকালে স্নান ও সংকল্প',
-          'বিষ্ণু/নারায়ণ নামজপ বা পূজা',
-          'নিজের রীতি অনুযায়ী উপবাস/সংযম',
-          'সন্ধ্যায় প্রদীপ ও প্রার্থনা',
-          'দ্বাদশীতে প্রচলিত নিয়ম অনুযায়ী পারণ',
-        ],
-        'materials': ['তুলসী', 'ফুল', 'প্রদীপ', 'ফল', 'জল', 'প্রসাদ'],
-        'good': ['নামজপ', 'পাঠ', 'দান', 'সংযম'],
-        'avoid': [
-          'স্বাস্থ্য-সামর্থ্য বিবেচনা না করে কঠোর উপবাস',
-          'সম্প্রদায়ভেদে পারণের নিয়ম এক বলে ধরে নেওয়া',
-        ],
-      };
-    }
-
-    if (label.contains('সংক্রান্তি')) {
-      return {
-        'importance':
-            'সংক্রান্তি সূর্যের এক রাশি থেকে অন্য রাশিতে প্রবেশের পঞ্জিকাগত মুহূর্ত। বিভিন্ন সংক্রান্তিতে স্নান, দান ও সূর্য-উপাসনার প্রথা দেখা যায়।',
-        'vrata':
-            'নির্দিষ্ট সংক্রান্তির আচার অঞ্চলভেদে আলাদা। স্থানীয়/পারিবারিক রীতি অনুসরণ করুন।',
-        'steps': [
-          'স্নান ও পরিষ্কার-পরিচ্ছন্নতা',
-          'সূর্যকে প্রণাম/অর্ঘ্য',
-          'প্রার্থনা ও জপ',
-          'সামর্থ্য অনুযায়ী দান',
-        ],
-        'materials': ['জল', 'ফুল', 'প্রদীপ', 'ফল/প্রসাদ'],
-        'good': ['সূর্য-প্রণাম', 'দান', 'জপ/পাঠ'],
-        'avoid': ['অঞ্চলভেদে আচারকে সর্বজনীন নিয়ম ধরে নেওয়া'],
-      };
-    }
-
-    if (tithi.name == 'অষ্টমী' || label.contains('অষ্টমী')) {
-      return {
-        'importance':
-            'অষ্টমী বিভিন্ন দেবী-পূজা ও ব্রতের সঙ্গে যুক্ত হতে পারে। কোন অষ্টমী তা মাস ও সংশ্লিষ্ট উৎসবের ওপর নির্ভর করে।',
-        'vrata':
-            'যদি এই দিনে নির্দিষ্ট উৎসব/ব্রত থাকে, সেই উৎসবের নিজস্ব বিধিই অনুসরণ করুন।',
-        'steps': [
-          'স্নান ও সংকল্প',
-          'দেবী/ইষ্টদেবতার পূজা',
-          'পুষ্প, প্রদীপ ও প্রার্থনা',
-          'প্রচলিত পাঠ/জপ',
-        ],
-        'materials': ['ফুল', 'প্রদীপ', 'ধূপ', 'ফল', 'প্রসাদ'],
-        'good': ['পূজা', 'জপ/পাঠ', 'দান'],
-        'avoid': ['উৎসবভেদে ভিন্ন বিধিকে এক নিয়ম মনে করা'],
-      };
-    }
-
-    if (tithi.name == 'চতুর্দশী' || label.contains('চতুর্দশী')) {
-      return {
-        'importance':
-            'চতুর্দশী তিথিতে শিব, কালী বা অন্যান্য বিশেষ আচার কিছু উৎসবে গুরুত্বপূর্ণ হতে পারে। সংশ্লিষ্ট উৎসবের নাম অনুযায়ী বিধি বদলায়।',
-        'vrata':
-            'নির্দিষ্ট চতুর্দশীর ব্রত/পূজা থাকলে সেই উৎসবের রীতিই প্রযোজ্য।',
-        'steps': [
-          'স্নান ও সংকল্প',
-          'ইষ্টদেবতার পূজা',
-          'প্রদীপ/জপ/পাঠ',
-          'পারিবারিক রীতি অনুযায়ী প্রসাদ/দান',
-        ],
-        'materials': ['ফুল', 'প্রদীপ', 'ধূপ', 'জল', 'ফল/প্রসাদ'],
-        'good': ['পূজা', 'প্রার্থনা', 'জপ'],
-        'avoid': ['নির্দিষ্ট উৎসব না জেনে বিশেষ বিধি ধরে নেওয়া'],
-      };
-    }
-
-    return {
-      'importance':
-          'এটি পঞ্জিকার একটি তিথি/বিশেষ দিন। এর পূজা, ব্রত ও আচার সংশ্লিষ্ট উৎসব, অঞ্চল, পরিবার ও সম্প্রদায় অনুযায়ী ভিন্ন হতে পারে।',
-      'vrata':
-          'এই দিনের জন্য নির্দিষ্ট ব্রত থাকলে পরিবারের প্রচলিত পঞ্জিকা বা পুরোহিতের রীতি অনুসরণ করুন।',
-      'steps': [
-        'স্নান ও পরিষ্কার-পরিচ্ছন্নতা',
-        'ইষ্টদেবতার প্রার্থনা',
-        'প্রদীপ/জপ/পাঠ',
-        'সামর্থ্য অনুযায়ী দান বা সেবা',
-      ],
-      'materials': ['ফুল', 'প্রদীপ', 'জল', 'ফল/প্রসাদ'],
-      'good': ['প্রার্থনা', 'জপ/পাঠ', 'দান'],
-      'avoid': ['আঞ্চলিক/পারিবারিক ভিন্নতাকে উপেক্ষা করা'],
-    };
-  }
-
-  Widget _glassCard({
-    required String title,
-    required Widget child,
-    IconData? icon,
-  }) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: const Color(0xFF08172F).withValues(alpha: 0.64),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (icon != null) ...[
-                Icon(icon, color: const Color(0xFFFFD36E), size: 18),
-                const SizedBox(width: 7),
-              ],
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFFFFD36E),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 9),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _bulletList(List<String> rows) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: rows
-          .map(
-            (s) => Padding(
-              padding: const EdgeInsets.only(bottom: 7),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '• ',
-                    style: TextStyle(
-                      color: Color(0xFFFFD36E),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      s,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                        height: 1.45,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-
-  Widget _infoChip(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Text(
-        '$label\n$value',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11.5,
-          height: 1.35,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _setReminder(
-    String occasionName,
-    (DateTime start, DateTime end) timing,
-    String wantedTithi,
-  ) async {
-    final now = DateTime.now();
-    var when = _actual(timing.$1);
-
-    if (!when.isAfter(now)) {
-      final end = _actual(timing.$2);
-      if (end.isAfter(now.add(const Duration(minutes: 15)))) {
-        when = now.add(const Duration(minutes: 5));
-      } else {
-        DateTime? nextDate;
-        for (int i = 1; i <= 45; i++) {
-          final d = DateTime(
-            widget.date.year,
-            widget.date.month,
-            widget.date.day,
-          ).add(Duration(days: i));
-          for (int h = 0; h < 24; h += 4) {
-            final probe = DateTime(d.year, d.month, d.day, h);
-            if (PanchangCalculator.tithiFor(probe).name == wantedTithi) {
-              nextDate = DateTime(d.year, d.month, d.day, 7);
-              break;
-            }
-          }
-          if (nextDate != null) break;
-        }
-        when = nextDate ?? now.add(const Duration(days: 1));
-      }
-    }
-
-    await ReminderStore.instance.load();
-    await ReminderStore.instance.add(ReminderItem('🕉 $occasionName', when));
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Reminder সেট হয়েছে • ${bnNum(when.day)} ${gregMonthBn(when.month)} ${bnTime12(when)}',
-        ),
-      ),
-    );
-  }
-
-  void _share(
-    String occasionName,
-    BengaliMonthInfo info,
-    int bengaliDay,
-    TithiInfo tithi,
-    (DateTime start, DateTime end) timing,
-    SunTimes sun,
-    List<CalendarEvent> events,
-  ) {
-    final eventText = events.isEmpty
-        ? ''
-        : '\nবিশেষ দিন: ${events.map((e) => '${e.icon} ${e.label}').join(' • ')}';
-
-    Share.share(
-      '🪷 $occasionName\n'
-      '${bnNum(bengaliDay)} ${info.name} ${bnNum(info.year)} • '
-      '${bnNum(widget.date.day)} ${gregMonthBn(widget.date.month)} ${bnNum(widget.date.year)}\n'
-      '${tithi.paksha} পক্ষ • ${tithi.name}\n'
-      'তিথি শুরু: ${ContentData._fmtTithiEdge(timing.$1)}\n'
-      'তিথি শেষ: ${ContentData._fmtTithiEdge(timing.$2)}\n'
-      'সূর্যোদয়: ${bnTime12(sun.sunrise)} • সূর্যাস্ত: ${bnTime12(sun.sunset)}'
-      '$eventText\n\n'
-      'বাংলা পঞ্জিকা',
-      subject: occasionName,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final reference = _referenceMoment();
-    final tithi = PanchangCalculator.tithiFor(reference);
-    final timing = PanchangCalculator.tithiTiming(reference);
-    final info = BengaliDateUtil.monthInfoFor(widget.date);
-    final bengaliDay = widget.date.difference(info.start).inDays + 1;
-    final events = BengaliCalendarData.eventsFor(widget.date);
-    final eventLabel =
-        widget.event?.label ?? events.map((e) => e.label).join(' ');
-    final occasionName = _occasionName(tithi, info, events);
-    final guide = _guideFor(tithi, eventLabel);
-
-    final sun = PanchangCalculator.sunTimes(
-      widget.date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final rahu = PanchangCalculator.rahuKalam(
-      widget.date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final abhijit = PanchangCalculator.abhijitMuhurta(
-      widget.date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final nakIdx = PanchangCalculator.nakshatraIndexFor(reference);
-    final rashiIdx = PanchangCalculator.rashiIndexFor(reference);
-    final yogaIdx = PanchangCalculator.yogaIndexFor(reference);
-    final karana = PanchangCalculator.karanaFor(reference);
-
-    final motif = tithi.name == 'অমাবস্যা'
-        ? 'moonNew'
-        : tithi.name == 'পূর্ণিমা'
-        ? 'moonFull'
-        : null;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFF030A16),
-      body: CosmicBackground(
-        child: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(8, 7, 12, 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: Colors.white,
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        occasionName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFFFFD36E),
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => _share(
-                        occasionName,
-                        info,
-                        bengaliDay,
-                        tithi,
-                        timing,
-                        sun,
-                        events,
-                      ),
-                      icon: const Icon(
-                        Icons.share_rounded,
-                        color: Color(0xFFFFD36E),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(15, 8, 15, 28),
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(17),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF10284D), Color(0xFF07152A)],
-                        ),
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(
-                          color: const Color(
-                            0xFFFFD36E,
-                          ).withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          if (motif != null) ...[
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.06),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: PanjikaArt(motif, size: 58),
-                            ),
-                            const SizedBox(width: 13),
-                          ],
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  occasionName,
-                                  style: const TextStyle(
-                                    color: Color(0xFFFFD36E),
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '${bnNum(bengaliDay)} ${info.name} ${bnNum(info.year)}\n'
-                                  '${bnNum(widget.date.day)} ${gregMonthBn(widget.date.month)} ${bnNum(widget.date.year)} • '
-                                  '${PanchangCalculator.weekdayName(widget.date)}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12.5,
-                                    height: 1.45,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    _glassCard(
-                      title: 'তিথি ও সময়',
-                      icon: Icons.schedule_rounded,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _infoChip(
-                                '🌙 তিথি',
-                                '${tithi.paksha} পক্ষ • ${tithi.name}',
-                              ),
-                              _infoChip(
-                                '⏱️ শুরু',
-                                ContentData._fmtTithiEdge(timing.$1),
-                              ),
-                              _infoChip(
-                                '⏳ শেষ',
-                                ContentData._fmtTithiEdge(timing.$2),
-                              ),
-                              _infoChip('☀️ সূর্যোদয়', bnTime12(sun.sunrise)),
-                              _infoChip('🌇 সূর্যাস্ত', bnTime12(sun.sunset)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    if (events.isNotEmpty)
-                      _glassCard(
-                        title: 'এই দিনের বিশেষ পরিচিতি',
-                        icon: Icons.auto_awesome_rounded,
-                        child: _bulletList(
-                          events.map((e) => '${e.icon} ${e.label}').toList(),
-                        ),
-                      ),
-
-                    _glassCard(
-                      title: 'পঞ্চাঙ্গ বিস্তারিত',
-                      icon: Icons.menu_book_rounded,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _infoChip(
-                            '⭐ নক্ষত্র',
-                            PanchangCalculator.nakshatraNames[nakIdx],
-                          ),
-                          _infoChip(
-                            '🪐 চন্দ্র রাশি',
-                            PanchangCalculator.rashiNames[rashiIdx],
-                          ),
-                          _infoChip(
-                            '🔗 যোগ',
-                            PanchangCalculator.yogaNames[yogaIdx],
-                          ),
-                          _infoChip('⚙️ করণ', karana),
-                          _infoChip(
-                            '⏳ রাহুকাল',
-                            '${bnTime12(rahu['start']!)}–${bnTime12(rahu['end']!)}',
-                          ),
-                          _infoChip(
-                            '☀️ অভিজিৎ',
-                            abhijit['applicable'] == true
-                                ? '${bnTime12(abhijit['start'] as DateTime)}–${bnTime12(abhijit['end'] as DateTime)}'
-                                : 'আজ প্রযোজ্য নয়',
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    _glassCard(
-                      title: 'এই তিথির গুরুত্ব',
-                      icon: Icons.self_improvement_rounded,
-                      child: Text(
-                        guide['importance'] as String,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12.5,
-                          height: 1.55,
-                        ),
-                      ),
-                    ),
-
-                    _glassCard(
-                      title: 'ব্রত / উপবাস',
-                      icon: Icons.spa_rounded,
-                      child: Text(
-                        guide['vrata'] as String,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12.5,
-                          height: 1.55,
-                        ),
-                      ),
-                    ),
-
-                    _glassCard(
-                      title: 'পূজা / পালন — সাধারণ ধাপ',
-                      icon: Icons.local_florist_rounded,
-                      child: _bulletList(
-                        List<String>.from(guide['steps'] as List),
-                      ),
-                    ),
-
-                    _glassCard(
-                      title: 'সাধারণ সামগ্রী',
-                      icon: Icons.inventory_2_outlined,
-                      child: _bulletList(
-                        List<String>.from(guide['materials'] as List),
-                      ),
-                    ),
-
-                    _glassCard(
-                      title: 'যা করা ভালো — প্রচলিত রীতি অনুযায়ী',
-                      icon: Icons.check_circle_outline_rounded,
-                      child: _bulletList(
-                        List<String>.from(guide['good'] as List),
-                      ),
-                    ),
-
-                    _glassCard(
-                      title: 'সতর্কতা / যা এড়ানো ভালো',
-                      icon: Icons.info_outline_rounded,
-                      child: _bulletList(
-                        List<String>.from(guide['avoid'] as List),
-                      ),
-                    ),
-
-                    Container(
-                      padding: const EdgeInsets.all(13),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFD36E).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: const Color(
-                            0xFFFFD36E,
-                          ).withValues(alpha: 0.18),
-                        ),
-                      ),
-                      child: const Text(
-                        'ℹ️ পূজা/ব্রত/তর্পণের নিয়ম অঞ্চল, পরিবার ও সম্প্রদায়ভেদে ভিন্ন হতে পারে। এখানে সময়গুলো অ্যাপের পঞ্চাঙ্গ হিসেব থেকে দেখানো হয়েছে; নির্দিষ্ট ধর্মীয় বিধির ক্ষেত্রে নিজের পারিবারিক রীতি/স্থানীয় পঞ্জিকা অনুসরণ করুন।',
-                        style: TextStyle(
-                          color: Colors.white60,
-                          fontSize: 11,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () =>
-                                _setReminder(occasionName, timing, tithi.name),
-                            icon: const Icon(Icons.alarm_add_rounded),
-                            label: const Text('Reminder'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _share(
-                              occasionName,
-                              info,
-                              bengaliDay,
-                              tithi,
-                              timing,
-                              sun,
-                              events,
-                            ),
-                            icon: const Icon(Icons.share_rounded),
-                            label: const Text('Share'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -18567,7 +17119,7 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
         if (events.isEmpty)
           const Text(
             'এই তারিখের জন্য curated historical event এখনো যোগ করা হয়নি।',
-            style: TextStyle(color: Colors.white54, fontSize: 11.5),
+            style: TextStyle(color: Colors.white45, fontSize: 11.5),
           )
         else
           ...events.map(_eventCard),
@@ -19040,7 +17592,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                 children: [
                                   Container(
                                     width: 46,
-                                    height: 46 * _tsFactor(context),
+                                    height: 46,
                                     alignment: Alignment.center,
                                     decoration: BoxDecoration(
                                       color: const Color(
@@ -19668,7 +18220,7 @@ class _BestDayFinderScreenState extends State<BestDayFinderScreen> {
                             children: [
                               Container(
                                 width: 42,
-                                height: 42 * _tsFactor(context),
+                                height: 42,
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
                                   color: const Color(
@@ -19788,7 +18340,6 @@ class _PanchangCompareScreenState extends State<PanchangCompareScreen> {
   }
 
   Widget _dateCard(
-    BuildContext context,
     String tag,
     _TraditionalDayInsight data,
     VoidCallback onPick,
@@ -19851,7 +18402,7 @@ class _PanchangCompareScreenState extends State<PanchangCompareScreen> {
           Center(
             child: Container(
               width: 70,
-              height: 70 * _tsFactor(context),
+              height: 70,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
@@ -19958,18 +18509,9 @@ class _PanchangCompareScreenState extends State<PanchangCompareScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: _dateCard(context, 'DATE A', a, () => _pick(true)),
-                    ),
+                    Expanded(child: _dateCard('DATE A', a, () => _pick(true))),
                     const SizedBox(width: 9),
-                    Expanded(
-                      child: _dateCard(
-                        context,
-                        'DATE B',
-                        b,
-                        () => _pick(false),
-                      ),
-                    ),
+                    Expanded(child: _dateCard('DATE B', b, () => _pick(false))),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -20005,7 +18547,7 @@ class FestivalHubScreen extends StatelessWidget {
               Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
           borderRadius: BorderRadius.circular(15),
           child: Container(
-            height: 78 * _tsFactor(context),
+            height: 78,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: const Color(0xFF07172F).withValues(alpha: 0.64),
@@ -20839,7 +19381,7 @@ class _FamilyUpcomingBoardScreenState extends State<FamilyUpcomingBoardScreen> {
                           children: [
                             Container(
                               width: 48,
-                              height: 48 * _tsFactor(context),
+                              height: 48,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
@@ -21831,7 +20373,7 @@ class _SadhanaStreakScreenState extends State<SadhanaStreakScreen> {
                           children: [
                             Container(
                               width: 66,
-                              height: 66 * _tsFactor(context),
+                              height: 66,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
@@ -21931,7 +20473,7 @@ class _SadhanaStreakScreenState extends State<SadhanaStreakScreen> {
                                   children: [
                                     Container(
                                       width: 34,
-                                      height: 34 * _tsFactor(context),
+                                      height: 34,
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
@@ -22172,7 +20714,7 @@ class _FamilyOccasionAssistantScreenState
                     padding: const EdgeInsets.all(16),
                     children: [
                       SizedBox(
-                        height: 44 * _tsFactor(context),
+                        height: 44,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: _items.length,
@@ -22311,8 +20853,8 @@ class _Phase5HomeCommandCenter extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 38 * _tsFactor(context),
-              height: 38 * _tsFactor(context),
+              width: 38,
+              height: 38,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.07),
@@ -22328,24 +20870,22 @@ class _Phase5HomeCommandCenter extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w800,
-                      height: 1.2,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white54,
                       fontSize: 9.5,
-                      height: 1.2,
                     ),
                   ),
                 ],
@@ -22404,7 +20944,7 @@ class _Phase5HomeCommandCenter extends StatelessWidget {
             crossAxisCount: 2,
             crossAxisSpacing: 8,
             mainAxisSpacing: 8,
-            childAspectRatio: 2.28 / (_tsFactor(context) * 1.34),
+            childAspectRatio: 2.28,
             children: [
               _action(
                 context,
@@ -22478,7 +21018,7 @@ class _Phase5FestivalPulseCard extends StatelessWidget {
               children: [
                 Container(
                   width: 50,
-                  height: 50 * _tsFactor(context),
+                  height: 50,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
@@ -22615,7 +21155,7 @@ class FestivalLiveModeScreen extends StatelessWidget {
         onTap: () =>
             Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
         child: Container(
-          height: 74 * _tsFactor(context),
+          height: 74,
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.07),
@@ -22840,7 +21380,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
         onTap: () =>
             Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
         child: Container(
-          height: 78 * _tsFactor(context),
+          height: 78,
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.07),
@@ -22937,7 +21477,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
                             ),
                             Container(
                               width: 1,
-                              height: 42 * _tsFactor(context),
+                              height: 42,
                               color: Colors.white.withValues(alpha: 0.08),
                             ),
                             Expanded(
@@ -23762,7 +22302,7 @@ class Next24HoursPanchangScreen extends StatelessWidget {
                       children: [
                         Container(
                           width: 44,
-                          height: 44 * _tsFactor(context),
+                          height: 44,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.07),
@@ -24890,7 +23430,7 @@ class _Super30HomeCard extends StatelessWidget {
           children: [
             Container(
               width: 50,
-              height: 50 * _tsFactor(context),
+              height: 50,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.08),
@@ -24904,7 +23444,7 @@ class _Super30HomeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'পঞ্জিকা জ্ঞানকোষ',
+                    'SUPER 30 • Bengali Life Intelligence',
                     style: TextStyle(
                       color: Color(0xFFFFD36E),
                       fontSize: 14,
@@ -24995,16 +23535,16 @@ class Super30FeaturesScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '💎 পঞ্জিকা জ্ঞানকোষ'),
+          const _ScreenHeader(title: '💎 SUPER 30 Features'),
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
               itemCount: _super30Features.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
-                mainAxisExtent: 154 * _tsFactor(context),
+                childAspectRatio: 1.35,
               ),
               itemBuilder: (context, i) {
                 final f = _super30Features[i];
@@ -25423,7 +23963,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
     Widget big(String emoji, String label, Widget page) => Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: SizedBox(
-        height: 72 * _tsFactor(context),
+        height: 72,
         width: double.infinity,
         child: ElevatedButton(
           onPressed: () =>
@@ -26244,11 +24784,11 @@ class VastuHomeHubScreen extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: tools.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
-                    mainAxisExtent: 164 * _tsFactor(context),
+                    childAspectRatio: 1.15,
                   ),
                   itemBuilder: (context, i) {
                     final t = tools[i];
@@ -26401,7 +24941,7 @@ class VastuDirectionGuideScreen extends StatelessWidget {
                     children: [
                       Container(
                         width: 48,
-                        height: 48 * _tsFactor(context),
+                        height: 48,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: const Color(
@@ -27081,7 +25621,7 @@ class _VastuHomeChecklistScreenState extends State<VastuHomeChecklistScreen> {
                           children: [
                             SizedBox(
                               width: 54,
-                              height: 54 * _tsFactor(context),
+                              height: 54,
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
@@ -27157,2562 +25697,6 @@ class _VastuHomeChecklistScreenState extends State<VastuHomeChecklistScreen> {
       ),
     );
   }
-}
-
-// =====================================================================
-// PHASE 18 — LATEST 30 NON-AI DAILY / HERITAGE / PANJIKA TOOLS
-// সব feature rule-based / local-data based. Paid AI API লাগে না।
-// =====================================================================
-
-class _Phase18Feature {
-  final String id;
-  final String icon;
-  final String title;
-  final String subtitle;
-  const _Phase18Feature(this.id, this.icon, this.title, this.subtitle);
-}
-
-const List<_Phase18Feature> _phase18Features = [
-  _Phase18Feature(
-    'sky_map',
-    '🌌',
-    'Sky Map Lite',
-    'চাঁদ ও দৃশ্যমান গ্রহের দিক/উচ্চতা',
-  ),
-  _Phase18Feature(
-    'eclipse',
-    '🌕',
-    'Eclipse Center',
-    'আগামী সূর্যগ্রহণ ও চন্দ্রগ্রহণ',
-  ),
-  _Phase18Feature(
-    'tide',
-    '🌊',
-    'জোয়ার-ভাটা Calendar',
-    'তারিখভিত্তিক উপকূলীয় tide note',
-  ),
-  _Phase18Feature(
-    'season',
-    '🌾',
-    'বাংলা ঋতু Dashboard',
-    '৬ ঋতু, মাস ও seasonal culture',
-  ),
-  _Phase18Feature(
-    'sun_direction',
-    '🧭',
-    'Sunrise Direction',
-    'সূর্যোদয়/সূর্যাস্তের compass direction',
-  ),
-  _Phase18Feature(
-    'lamp',
-    '🕯️',
-    'প্রদীপ ও সন্ধ্যা Mode',
-    'সূর্যাস্তভিত্তিক live সন্ধ্যা reminder',
-  ),
-  _Phase18Feature(
-    'brahma',
-    '🌅',
-    'Brahma Muhurta Clock',
-    'প্রতিদিনের ব্রাহ্মমুহূর্ত + countdown',
-  ),
-  _Phase18Feature(
-    'samagri',
-    '🪔',
-    'Puja Samagri Generator',
-    'পূজা বেছে checklist তৈরি',
-  ),
-  _Phase18Feature(
-    'anniversary',
-    '📆',
-    'বাংলা Anniversary Calculator',
-    'তারিখের বাংলা anniversary খুঁজুন',
-  ),
-  _Phase18Feature(
-    'birthday',
-    '🎂',
-    'Bengali Birthday Mode',
-    'বাংলা তারিখ ধরে পরের জন্মদিন',
-  ),
-  _Phase18Feature(
-    'tithi_anniversary',
-    '🧿',
-    'Tithi Anniversary',
-    'একই তিথির পরবর্তী দিন খুঁজুন',
-  ),
-  _Phase18Feature(
-    'temple_bell',
-    '🔔',
-    'Temple Bell Time',
-    'সকাল/সন্ধ্যার আরতি reminder',
-  ),
-  _Phase18Feature(
-    'month_story',
-    '📖',
-    'বাংলা মাসের গল্প',
-    '১২ মাসের ঋতু, সংস্কৃতি ও উৎসব',
-  ),
-  _Phase18Feature(
-    'alpana',
-    '🎨',
-    'Alpana Generator',
-    'procedural আলপনা preview',
-  ),
-  _Phase18Feature(
-    'festival_route',
-    '🎊',
-    'Festival Route Timeline',
-    'ষষ্ঠী থেকে দশমীসহ ধাপভিত্তিক timeline',
-  ),
-  _Phase18Feature(
-    'tithi_clock',
-    '⏳',
-    'Tithi Transition Clock',
-    'বর্তমান তিথি → শেষ → পরের তিথি',
-  ),
-  _Phase18Feature(
-    'moon_alert',
-    '🌙',
-    'Chandradarshan Alert',
-    'অমাবস্যার পর প্রথম সন্ধ্যার reminder',
-  ),
-  _Phase18Feature(
-    'yatra',
-    '🧭',
-    'Yatra Day Planner',
-    'daylight + রাহুকাল + অভিজিৎ একসাথে',
-  ),
-  _Phase18Feature(
-    'heritage',
-    '📜',
-    'Bengali Heritage Map',
-    'বাংলার ঐতিহ্যস্থান category-wise',
-  ),
-  _Phase18Feature(
-    'sound',
-    '🎶',
-    'Festival Sound Mode',
-    'bell tone + বাংলা spoken ambience',
-  ),
-  _Phase18Feature(
-    'calculator',
-    '🧮',
-    'Panchang Calculator Hub',
-    'দিনের ব্যবধান, বাংলা date, তিথি',
-  ),
-  _Phase18Feature(
-    'date100',
-    '📅',
-    '100-Year Date Explorer',
-    '১৯০০–২১০০ বাংলা date ও পঞ্জিকা',
-  ),
-  _Phase18Feature(
-    'night',
-    '🌠',
-    'Night Panchang Mode',
-    'রাতের চাঁদ, তিথি ও দৃশ্যমান গ্রহ',
-  ),
-  _Phase18Feature(
-    'duty',
-    '👪',
-    'Family Festival Duty Board',
-    'পরিবারের পূজার কাজ ভাগ করুন',
-  ),
-  _Phase18Feature(
-    'offline_pack',
-    '📦',
-    'Offline Festival Pack',
-    'আগামী উৎসব local cache-এ রাখুন',
-  ),
-  _Phase18Feature(
-    'silent',
-    '🔕',
-    'Smart Silent Hours',
-    'নতুন alert-এর quiet-time control',
-  ),
-  _Phase18Feature(
-    'memory',
-    '🎞️',
-    'Festival Memory Timeline',
-    'উৎসবের স্মৃতি ও note timeline',
-  ),
-  _Phase18Feature(
-    'meditation',
-    '🧘',
-    'Meditation & Breath Timer',
-    'শ্বাসের guided timer',
-  ),
-  _Phase18Feature(
-    'today',
-    '📱',
-    'One-Tap আজ Screen',
-    'আজকের সব জরুরি তথ্য এক screen-এ',
-  ),
-  _Phase18Feature(
-    'streak',
-    '🏆',
-    'Daily Panchang Streak',
-    'প্রতিদিন পঞ্জিকা দেখার streak',
-  ),
-];
-
-class Phase18Latest30HubScreen extends StatefulWidget {
-  const Phase18Latest30HubScreen({super.key});
-  @override
-  State<Phase18Latest30HubScreen> createState() =>
-      _Phase18Latest30HubScreenState();
-}
-
-class _Phase18Latest30HubScreenState extends State<Phase18Latest30HubScreen> {
-  final TextEditingController _search = TextEditingController();
-  String _query = '';
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final q = _query.trim().toLowerCase();
-    final items = _phase18Features.where((f) {
-      if (q.isEmpty) return true;
-      return f.title.toLowerCase().contains(q) ||
-          f.subtitle.toLowerCase().contains(q);
-    }).toList();
-    return CosmicBackground(
-      child: Column(
-        children: [
-          const _ScreenHeader(title: '🆕 Latest 30 • Phase 18'),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-            child: TextField(
-              controller: _search,
-              onChanged: (v) => setState(() => _query = v),
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: '৩০টি নতুন feature খুঁজুন',
-                hintStyle: const TextStyle(color: Colors.white54),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFFFFD36E)),
-                filled: true,
-                fillColor: const Color(0xFF07172F).withValues(alpha: 0.62),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.15),
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.15),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 32),
-              itemCount: items.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                mainAxisExtent: 178 * _tsFactor(context),
-              ),
-              itemBuilder: (context, i) {
-                final f = items[i];
-                return InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => Phase18FeatureScreen(feature: f),
-                    ),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(13),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF07172F).withValues(alpha: 0.68),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: const Color(0xFFFFD36E).withValues(alpha: 0.30),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(f.icon, style: const TextStyle(fontSize: 27)),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF2FBFA3,
-                                ).withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Text(
-                                'NEW',
-                                style: TextStyle(
-                                  color: Color(0xFF8EF2D7),
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          f.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          f.subtitle,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 10.2,
-                            height: 1.22,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Phase18HomeCard extends StatelessWidget {
-  const _Phase18HomeCard();
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const Phase18Latest30HubScreen()),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFF102A55).withValues(alpha: 0.82),
-              const Color(0xFF4B1671).withValues(alpha: 0.72),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: const Color(0xFFFFD36E).withValues(alpha: 0.38),
-          ),
-        ),
-        child: const Row(
-          children: [
-            Text('🆕', style: TextStyle(fontSize: 30)),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Latest 30 • নতুন আপডেট',
-                    style: TextStyle(
-                      color: Color(0xFFFFD36E),
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    'আকাশ • তিথি • উৎসব • পরিবার • ঐতিহ্য • utility',
-                    style: TextStyle(color: Colors.white70, fontSize: 10.5),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.arrow_forward_ios_rounded,
-              color: Colors.white70,
-              size: 18,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class Phase18FeatureScreen extends StatefulWidget {
-  final _Phase18Feature feature;
-  const Phase18FeatureScreen({super.key, required this.feature});
-  @override
-  State<Phase18FeatureScreen> createState() => _Phase18FeatureScreenState();
-}
-
-class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
-  DateTime _date = DateTime.now();
-  DateTime _date2 = DateTime.now().add(const Duration(days: 30));
-  Timer? _clockTimer;
-  Timer? _meditationTimer;
-  int _meditationSeconds = 180;
-  bool _meditationRunning = false;
-  int _breathPhase = 0;
-  final Set<int> _checked = <int>{};
-  List<Map<String, dynamic>> _records = <Map<String, dynamic>>[];
-  TimeOfDay _timeA = const TimeOfDay(hour: 6, minute: 0);
-  TimeOfDay _timeB = const TimeOfDay(hour: 18, minute: 0);
-  bool _silentEnabled = false;
-  int _streak = 0;
-  String _status = '';
-
-  String get _key => 'p18_${widget.feature.id}';
-
-  @override
-  void initState() {
-    super.initState();
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _clockTimer?.cancel();
-    _meditationTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    final p = await SharedPreferences.getInstance();
-    if (widget.feature.id == 'duty' || widget.feature.id == 'memory') {
-      final raw = p.getStringList(_key) ?? const <String>[];
-      final list = <Map<String, dynamic>>[];
-      for (final s in raw) {
-        try {
-          list.add(Map<String, dynamic>.from(jsonDecode(s) as Map));
-        } catch (_) {}
-      }
-      if (mounted) setState(() => _records = list);
-    }
-    if (widget.feature.id == 'silent') {
-      final a = p.getString('${_key}_a') ?? '22:00';
-      final b = p.getString('${_key}_b') ?? '06:00';
-      if (mounted) {
-        setState(() {
-          _silentEnabled = p.getBool('${_key}_enabled') ?? false;
-          _timeA = _parseTime(a, const TimeOfDay(hour: 22, minute: 0));
-          _timeB = _parseTime(b, const TimeOfDay(hour: 6, minute: 0));
-        });
-      }
-    }
-    if (widget.feature.id == 'temple_bell') {
-      final a = p.getString('${_key}_a') ?? '06:00';
-      final b = p.getString('${_key}_b') ?? '18:00';
-      if (mounted)
-        setState(() {
-          _timeA = _parseTime(a, const TimeOfDay(hour: 6, minute: 0));
-          _timeB = _parseTime(b, const TimeOfDay(hour: 18, minute: 0));
-        });
-    }
-    if (widget.feature.id == 'streak') await _markStreak();
-  }
-
-  TimeOfDay _parseTime(String value, TimeOfDay fallback) {
-    final parts = value.split(':');
-    if (parts.length != 2) return fallback;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return fallback;
-    return TimeOfDay(
-      hour: h.clamp(0, 23).toInt(),
-      minute: m.clamp(0, 59).toInt(),
-    );
-  }
-
-  String _timeKey(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-
-  Future<void> _markStreak() async {
-    final p = await SharedPreferences.getInstance();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final lastMs = p.getInt('${_key}_last');
-    var streak = p.getInt('${_key}_count') ?? 0;
-    if (lastMs == null) {
-      streak = 1;
-    } else {
-      final lastRaw = DateTime.fromMillisecondsSinceEpoch(lastMs);
-      final last = DateTime(lastRaw.year, lastRaw.month, lastRaw.day);
-      final diff = today.difference(last).inDays;
-      if (diff == 1) streak += 1;
-      if (diff > 1) streak = 1;
-    }
-    await p.setInt('${_key}_last', today.millisecondsSinceEpoch);
-    await p.setInt('${_key}_count', streak);
-    if (mounted) setState(() => _streak = streak);
-  }
-
-  Widget _glass(Widget child, {EdgeInsets padding = const EdgeInsets.all(14)}) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: const Color(0xFF07172F).withValues(alpha: 0.66),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-      ),
-      child: child,
-    );
-  }
-
-  Widget _heading(String text) => Padding(
-    padding: const EdgeInsets.only(top: 5, bottom: 8),
-    child: Text(
-      text,
-      style: const TextStyle(
-        color: Color(0xFFFFD36E),
-        fontSize: 14.5,
-        fontWeight: FontWeight.w900,
-      ),
-    ),
-  );
-
-  Widget _line(String icon, String label, String value, {Color? valueColor}) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 28,
-              child: Text(icon, style: const TextStyle(fontSize: 17)),
-            ),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                value,
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: valueColor ?? Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _note(String text) => Text(
-    text,
-    style: const TextStyle(color: Colors.white60, fontSize: 11.5, height: 1.45),
-  );
-
-  String _dateLabel(DateTime d) =>
-      '${bnNum(d.day)} ${gregMonthBn(d.month)} ${bnNum(d.year)}';
-
-  String _bengaliDate(DateTime d) {
-    final info = BengaliDateUtil.monthInfoFor(d);
-    final day = d.difference(info.start).inDays + 1;
-    return '${bnNum(day)} ${info.name} ${bnNum(info.year)}';
-  }
-
-  String _duration(Duration d) {
-    var sec = d.inSeconds;
-    if (sec < 0) sec = 0;
-    final h = sec ~/ 3600;
-    final m = (sec % 3600) ~/ 60;
-    final s = sec % 60;
-    return '${bnNum(h)}:${bnNum(m).padLeft(2, '০')}:${bnNum(s).padLeft(2, '০')}';
-  }
-
-  Future<void> _pickMainDate({
-    int firstYear = 1900,
-    int lastYear = 2100,
-  }) async {
-    final safeYear = _date.year < firstYear
-        ? firstYear
-        : (_date.year > lastYear ? lastYear : _date.year);
-    final initial = DateTime(safeYear, _date.month, _date.day);
-    final d = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(firstYear, 1, 1),
-      lastDate: DateTime(lastYear, 12, 31),
-    );
-    if (d != null && mounted) setState(() => _date = d);
-  }
-
-  Future<TimeOfDay?> _pickClock(TimeOfDay initial) =>
-      showTimePicker(context: context, initialTime: initial);
-
-  DateTime _combine(DateTime day, TimeOfDay t) =>
-      DateTime(day.year, day.month, day.day, t.hour, t.minute);
-
-  Future<void> _saveRecords() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setStringList(_key, _records.map(jsonEncode).toList());
-  }
-
-  Future<void> _addDuty() async {
-    final who = TextEditingController();
-    final task = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('নতুন দায়িত্ব'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: who,
-              decoration: const InputDecoration(labelText: 'কার দায়িত্ব?'),
-            ),
-            TextField(
-              controller: task,
-              decoration: const InputDecoration(labelText: 'কাজ কী?'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('বাতিল'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('যোগ করুন'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && task.text.trim().isNotEmpty) {
-      setState(
-        () => _records.add({
-          'who': who.text.trim().isEmpty ? 'পরিবার' : who.text.trim(),
-          'task': task.text.trim(),
-          'done': false,
-        }),
-      );
-      await _saveRecords();
-    }
-    who.dispose();
-    task.dispose();
-  }
-
-  Future<void> _addMemory() async {
-    final title = TextEditingController();
-    final note = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('উৎসবের স্মৃতি যোগ করুন'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: title,
-              decoration: const InputDecoration(labelText: 'উৎসব/শিরোনাম'),
-            ),
-            TextField(
-              controller: note,
-              maxLines: 3,
-              decoration: const InputDecoration(labelText: 'স্মৃতি / note'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('বাতিল'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && title.text.trim().isNotEmpty) {
-      setState(
-        () => _records.insert(0, {
-          'title': title.text.trim(),
-          'note': note.text.trim(),
-          'date': DateTime.now().millisecondsSinceEpoch,
-        }),
-      );
-      await _saveRecords();
-    }
-    title.dispose();
-    note.dispose();
-  }
-
-  DateTime? _nextSameBengaliDate(DateTime original) {
-    final info = BengaliDateUtil.monthInfoFor(original);
-    final bDay = original.difference(info.start).inDays + 1;
-    final today = DateTime.now();
-    for (int i = 0; i <= 430; i++) {
-      final d = DateTime(
-        today.year,
-        today.month,
-        today.day,
-      ).add(Duration(days: i));
-      final x = BengaliDateUtil.monthInfoFor(d);
-      final xd = d.difference(x.start).inDays + 1;
-      if (x.name == info.name && xd == bDay && d.isAfter(today)) return d;
-    }
-    return null;
-  }
-
-  DateTime? _nextSameTithi(DateTime original) {
-    final target = PanchangCalculator.tithiFor(original).index;
-    final today = DateTime.now();
-    for (int i = 1; i <= 420; i++) {
-      final d = DateTime(
-        today.year,
-        today.month,
-        today.day,
-        12,
-      ).add(Duration(days: i));
-      if (PanchangCalculator.tithiFor(d).index == target) return d;
-    }
-    return null;
-  }
-
-  String _direction(double az) {
-    const dirs = [
-      'উত্তর',
-      'উত্তর-পূর্ব',
-      'পূর্ব',
-      'দক্ষিণ-পূর্ব',
-      'দক্ষিণ',
-      'দক্ষিণ-পশ্চিম',
-      'পশ্চিম',
-      'উত্তর-পশ্চিম',
-    ];
-    return dirs[((az + 22.5) ~/ 45) % 8];
-  }
-
-  List<Widget> _skyMap() {
-    final now = DateTime.now();
-    const bodies = [
-      ['🌙', 'চাঁদ', 'moon'],
-      ['☿', 'বুধ', 'mercury'],
-      ['♀', 'শুক্র', 'venus'],
-      ['♂', 'মঙ্গল', 'mars'],
-      ['♃', 'বৃহস্পতি', 'jupiter'],
-      ['♄', 'শনি', 'saturn'],
-    ];
-    final rows = <Widget>[];
-    for (final b in bodies) {
-      final pos = PanchangCalculator.celestialAltAz(
-        b[2],
-        now,
-        lat: AppLocation.lat,
-        lon: AppLocation.lon,
-      );
-      final alt = pos['altitude']!;
-      final az = pos['azimuth']!;
-      rows.add(
-        _line(
-          b[0],
-          b[1],
-          alt > 0
-              ? '${_direction(az)} • ${bnNum(az.round())}° • উচ্চতা ${bnNum(alt.round())}°'
-              : 'দিগন্তের নিচে',
-        ),
-      );
-    }
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('আজকের আকাশ • ${AppLocation.district}'),
-            ...rows,
-            const SizedBox(height: 6),
-            _note(
-              'এটি lightweight astronomical sky guide। দৃশ্যমানতা মেঘ, আলো দূষণ ও স্থানীয় দিগন্তের ওপর নির্ভর করে।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _eclipseCenter() {
-    final data = ContentData._liveEclipses();
-    return [
-      ...data.map(
-        (r) => Padding(
-          padding: const EdgeInsets.only(bottom: 9),
-          child: _glass(
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  r[0],
-                  style: const TextStyle(
-                    color: Color(0xFFFFD36E),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  r[1],
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      _note(
-        'গ্রহণ দেখার সময় সূর্যগ্রহণে certified solar eye protection অবশ্যই ব্যবহার করুন।',
-      ),
-    ];
-  }
-
-  Future<void> _editTideNote() async {
-    final p = await SharedPreferences.getInstance();
-    final k = '${_key}_${_date.year}_${_date.month}_${_date.day}';
-    final old = p.getString(k) ?? '';
-    final c = TextEditingController(text: old);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('জোয়ার-ভাটা note'),
-        content: TextField(
-          controller: c,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'উদাহরণ: High 08:20, Low 14:35 • উৎস: স্থানীয় tide table',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('বাতিল'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await p.setString(k, c.text.trim());
-      if (mounted) setState(() => _status = c.text.trim());
-    }
-    c.dispose();
-  }
-
-  List<Widget> _tide() {
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('তারিখভিত্তিক Tide Note'),
-            _line('📅', 'তারিখ', _dateLabel(_date)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _pickMainDate(firstYear: 2020, lastYear: 2100),
-                    icon: const Icon(Icons.calendar_month),
-                    label: const Text('তারিখ বদলান'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _editTideNote,
-                    icon: const Icon(Icons.edit_note),
-                    label: const Text('Tide note'),
-                  ),
-                ),
-              ],
-            ),
-            if (_status.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(_status, style: const TextStyle(color: Colors.white)),
-            ],
-            const SizedBox(height: 10),
-            _note(
-              'জোয়ার-ভাটা খুব location-specific। কোনো fake live সময় দেখানো হচ্ছে না—official/local tide table থেকে সময় নিয়ে এখানে save করুন। নৌযাত্রা বা নিরাপত্তার সিদ্ধান্তে official marine data ব্যবহার করুন।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _season() {
-    final info = BengaliDateUtil.monthInfoFor(_date);
-    const seasonMap = {
-      'বৈশাখ': ['গ্রীষ্ম', '☀️', 'কালবৈশাখী, আম-কাঁঠাল, নববর্ষ'],
-      'জ্যৈষ্ঠ': ['গ্রীষ্ম', '☀️', 'গরম, ফলের মৌসুম, জল সংরক্ষণ'],
-      'আষাঢ়': ['বর্ষা', '🌧️', 'বর্ষার শুরু, ধান রোপণের সংস্কৃতি'],
-      'শ্রাবণ': ['বর্ষা', '🌧️', 'সবুজ প্রকৃতি, শ্রাবণী আচার'],
-      'ভাদ্র': ['শরৎ', '🌤️', 'মেঘ-রোদ, উৎসবের প্রস্তুতি'],
-      'আশ্বিন': ['শরৎ', '🌾', 'কাশফুল, দুর্গোৎসবের আবহ'],
-      'কার্তিক': ['হেমন্ত', '🪔', 'প্রদীপ, শিশির, নবান্নের প্রস্তুতি'],
-      'অগ্রহায়ণ': ['হেমন্ত', '🌾', 'নবান্ন, ধান কাটা'],
-      'পৌষ': ['শীত', '❄️', 'পিঠে-পুলি, পৌষ পার্বণ'],
-      'মাঘ': ['শীত', '❄️', 'কুয়াশা, সরস্বতী পূজা'],
-      'ফাল্গুন': ['বসন্ত', '🌸', 'ফুল, দোল, বসন্ত উৎসব'],
-      'চৈত্র': ['বসন্ত', '🌸', 'চৈত্র সংক্রান্তি, বছরের সমাপ্তি'],
-    };
-    final s = seasonMap[info.name]!;
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${s[1]} ${s[0]}',
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _line('📅', 'বাংলা মাস', '${info.name} ${bnNum(info.year)}'),
-            _line('🌿', 'ঋতুর বৈশিষ্ট্য', s[2]),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => _pickMainDate(),
-              icon: const Icon(Icons.calendar_month),
-              label: const Text('অন্য তারিখ দেখুন'),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _sunDirection(BuildContext context) {
-    final sun = PanchangCalculator.sunTimes(
-      _date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final rise = PanchangCalculator.celestialAltAz(
-      'sun',
-      sun.sunrise,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final set = PanchangCalculator.celestialAltAz(
-      'sun',
-      sun.sunset,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final raz = rise['azimuth']!;
-    final saz = set['azimuth']!;
-    return [
-      _glass(
-        Column(
-          children: [
-            _heading('সূর্যের দিক • ${_dateLabel(_date)}'),
-            SizedBox(
-              height: 130 * _tsFactor(context),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120 * _tsFactor(context),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFFFFD36E).withValues(alpha: 0.45),
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  const Positioned(
-                    top: 5,
-                    child: Text(
-                      'উত্তর',
-                      style: TextStyle(color: Colors.white70, fontSize: 11),
-                    ),
-                  ),
-                  Transform.rotate(
-                    angle: raz * math.pi / 180,
-                    child: const Icon(
-                      Icons.navigation_rounded,
-                      color: Color(0xFFFFD36E),
-                      size: 58,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _line(
-              '🌅',
-              'সূর্যোদয়',
-              '${bnTime12(sun.sunrise)} • ${_direction(raz)} ${bnNum(raz.round())}°',
-            ),
-            _line(
-              '🌇',
-              'সূর্যাস্ত',
-              '${bnTime12(sun.sunset)} • ${_direction(saz)} ${bnNum(saz.round())}°',
-            ),
-            OutlinedButton(
-              onPressed: () => _pickMainDate(),
-              child: const Text('তারিখ বদলান'),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _lampMode() {
-    final now = DateTime.now();
-    final sun = PanchangCalculator.sunTimes(
-      now,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final left = sun.sunset.difference(now);
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('🪔 আজকের সন্ধ্যা'),
-            _line('🌇', 'সূর্যাস্ত', bnTime12(sun.sunset)),
-            _line(
-              '⏳',
-              now.isBefore(sun.sunset) ? 'সন্ধ্যা শুরু হতে' : 'আজকের sunset',
-              now.isBefore(sun.sunset) ? _duration(left) : 'হয়ে গেছে',
-            ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: AppSettings.instance.eveningLampReminder,
-              activeThumbColor: const Color(0xFFFFD36E),
-              title: const Text(
-                'প্রতিদিন সূর্যাস্তে প্রদীপ reminder',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              subtitle: const Text(
-                'আগামী ৩০ দিনের real sunset ধরে schedule',
-                style: TextStyle(color: Colors.white60, fontSize: 11),
-              ),
-              onChanged: (v) async {
-                await AppSettings.instance.saveEveningLampReminder(v);
-                if (mounted) setState(() {});
-              },
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _brahma() {
-    final now = DateTime.now();
-    final sun = PanchangCalculator.sunTimes(
-      now,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final start = sun.sunrise.subtract(const Duration(minutes: 96));
-    final end = sun.sunrise.subtract(const Duration(minutes: 48));
-    String live;
-    if (now.isBefore(start))
-      live = 'শুরু হতে ${_duration(start.difference(now))}';
-    else if (now.isBefore(end))
-      live = 'চলছে • শেষ হতে ${_duration(end.difference(now))}';
-    else
-      live = 'আজকের সময় শেষ';
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '🌅 $live',
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _line('▶️', 'শুরু', bnTime12(start)),
-            _line('⏹️', 'শেষ', bnTime12(end)),
-            _line('☀️', 'সূর্যোদয়', bnTime12(sun.sunrise)),
-            _note(
-              'প্রচলিত ২ মুহূর্ত (প্রতি মুহূর্ত ৪৮ মিনিট) সূর্যোদয়ের আগে ধরে দেখানো হয়েছে। এটি ঐতিহ্যভিত্তিক সময় নির্দেশিকা।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _samagri() {
-    const sets = <String, List<String>>{
-      'লক্ষ্মীপূজা': [
-        'ফুল',
-        'ধূপ',
-        'প্রদীপ',
-        'ফল',
-        'মিষ্টি',
-        'চাল',
-        'সিঁদুর',
-        'আলপনা সামগ্রী',
-      ],
-      'সরস্বতী পূজা': [
-        'সাদা/হলুদ ফুল',
-        'ফল',
-        'খই',
-        'দই',
-        'বই/খাতা',
-        'ধূপ',
-        'প্রদীপ',
-      ],
-      'শিব পূজা': ['বেলপাতা', 'জল', 'দুধ', 'ফুল', 'ধূপ', 'প্রদীপ', 'ফল'],
-      'সাধারণ গৃহপূজা': [
-        'ঘট',
-        'ফুল',
-        'ধূপ',
-        'প্রদীপ',
-        'ফল',
-        'প্রসাদ',
-        'গঙ্গাজল/পরিষ্কার জল',
-      ],
-    };
-    final name = sets.keys.elementAt(_date.day % sets.length);
-    final items = sets[name]!;
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('বর্তমান তালিকা • $name'),
-            ...List.generate(
-              items.length,
-              (i) => CheckboxListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                value: _checked.contains(i),
-                activeColor: const Color(0xFFFFD36E),
-                checkColor: const Color(0xFF07172F),
-                title: Text(
-                  items[i],
-                  style: const TextStyle(color: Colors.white, fontSize: 12.5),
-                ),
-                onChanged: (v) => setState(
-                  () => v == true ? _checked.add(i) : _checked.remove(i),
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            _note(
-              'এটি সাধারণ checklist; পারিবারিক/সম্প্রদায়ভেদে আচার ও সামগ্রী ভিন্ন হতে পারে।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _anniversary({required bool birthday}) {
-    final info = BengaliDateUtil.monthInfoFor(_date);
-    final bDay = _date.difference(info.start).inDays + 1;
-    final next = _nextSameBengaliDate(_date);
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading(birthday ? 'বাংলা জন্মদিন' : 'বাংলা Anniversary'),
-            _line('📅', 'মূল ইংরেজি তারিখ', _dateLabel(_date)),
-            _line(
-              '🪷',
-              'সেই দিনের বাংলা তারিখ',
-              '${bnNum(bDay)} ${info.name} ${bnNum(info.year)}',
-            ),
-            _line(
-              '🔜',
-              'পরের একই বাংলা তারিখ',
-              next == null
-                  ? 'খুঁজে পাওয়া যায়নি'
-                  : '${_dateLabel(next)} • ${_bengaliDate(next)}',
-            ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: () =>
-                  _pickMainDate(firstYear: 1900, lastYear: DateTime.now().year),
-              icon: const Icon(Icons.cake_outlined),
-              label: Text(birthday ? 'জন্মতারিখ বাছুন' : 'মূল তারিখ বাছুন'),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _tithiAnniversary() {
-    final t = PanchangCalculator.tithiFor(_date);
-    final next = _nextSameTithi(_date);
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('তিথি Anniversary Finder'),
-            _line('📅', 'মূল তারিখ', _dateLabel(_date)),
-            _line('🌙', 'মূল তিথি', '${t.paksha} ${t.name}'),
-            _line(
-              '🔜',
-              'পরের মিল',
-              next == null
-                  ? 'পাওয়া যায়নি'
-                  : '${_dateLabel(next)} • ${_bengaliDate(next)}',
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () =>
-                  _pickMainDate(firstYear: 1900, lastYear: DateTime.now().year),
-              icon: const Icon(Icons.event_repeat),
-              label: const Text('মূল তারিখ বাছুন'),
-            ),
-            const SizedBox(height: 8),
-            _note(
-              'দিনের মধ্যভাগের calculated তিথি মিলিয়ে পরবর্তী দিন দেখানো হয়। শ্রাদ্ধ/ধর্মীয় সিদ্ধান্তে স্থানীয় প্রামাণ্য পঞ্জিকা/পুরোহিতের নিয়ম মিলিয়ে নিন।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  Future<void> _saveBellTimes() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString('${_key}_a', _timeKey(_timeA));
-    await p.setString('${_key}_b', _timeKey(_timeB));
-    final now = DateTime.now();
-    DateTime a = _combine(now, _timeA);
-    if (!a.isAfter(now)) a = a.add(const Duration(days: 1));
-    DateTime b = _combine(now, _timeB);
-    if (!b.isAfter(now)) b = b.add(const Duration(days: 1));
-    await NotificationService.instance.scheduleGeneric(
-      980101,
-      '🔔 সকাল আরতি',
-      'মন্দির/গৃহ আরতির সময় হয়েছে',
-      a,
-    );
-    await NotificationService.instance.scheduleGeneric(
-      980102,
-      '🔔 সন্ধ্যা আরতি',
-      'সন্ধ্যার আরতির সময় হয়েছে',
-      b,
-    );
-    if (mounted)
-      setState(
-        () => _status = '✅ পরবর্তী সকাল ও সন্ধ্যার reminder schedule হয়েছে',
-      );
-  }
-
-  List<Widget> _templeBell() {
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('নিজের আরতি সময়'),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Text('🌅', style: TextStyle(fontSize: 23)),
-              title: const Text(
-                'সকাল আরতি',
-                style: TextStyle(color: Colors.white),
-              ),
-              trailing: Text(
-                _timeA.format(context),
-                style: const TextStyle(
-                  color: Color(0xFFFFD36E),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              onTap: () async {
-                final t = await _pickClock(_timeA);
-                if (t != null) setState(() => _timeA = t);
-              },
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Text('🌆', style: TextStyle(fontSize: 23)),
-              title: const Text(
-                'সন্ধ্যা আরতি',
-                style: TextStyle(color: Colors.white),
-              ),
-              trailing: Text(
-                _timeB.format(context),
-                style: const TextStyle(
-                  color: Color(0xFFFFD36E),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              onTap: () async {
-                final t = await _pickClock(_timeB);
-                if (t != null) setState(() => _timeB = t);
-              },
-            ),
-            FilledButton.icon(
-              onPressed: _saveBellTimes,
-              icon: const Icon(Icons.notifications_active),
-              label: const Text('Reminder চালু করুন'),
-            ),
-            if (_status.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _status,
-                  style: const TextStyle(
-                    color: Color(0xFF8EF2D7),
-                    fontSize: 11.5,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _monthStory() {
-    final info = BengaliDateUtil.monthInfoFor(_date);
-    const stories = {
-      'বৈশাখ':
-          'বাংলা বছরের প্রথম মাস। নববর্ষ, হালখাতা, গ্রীষ্মের শুরু ও কালবৈশাখীর স্মৃতি এই মাসের সঙ্গে জড়িত।',
-      'জ্যৈষ্ঠ':
-          'তীব্র গরম ও আম-কাঁঠালের মাস। গ্রামীণ বাংলায় ফল ও জলকেন্দ্রিক বহু লোকাচার দেখা যায়।',
-      'আষাঢ়':
-          'বর্ষার আগমন, মেঘ ও কৃষিকাজের ব্যস্ততা। ধান রোপণের প্রস্তুতির সঙ্গে মাসটি গভীরভাবে যুক্ত।',
-      'শ্রাবণ':
-          'সবুজে ভরা বর্ষার মাস; শিবভক্তি ও নানা শ্রাবণী আচার বহু অঞ্চলে পালিত হয়।',
-      'ভাদ্র': 'বর্ষা থেকে শরতের সেতু; আকাশে মেঘ-রোদ এবং উৎসবের আগমনী আবহ।',
-      'আশ্বিন':
-          'কাশফুল, নীল আকাশ ও দুর্গোৎসবের মাস—বাঙালির সবচেয়ে পরিচিত উৎসব-আবহগুলোর একটি।',
-      'কার্তিক':
-          'হেমন্তের শুরু, প্রদীপ, কালীপূজা ও লক্ষ্মী আরাধনার নানা আঞ্চলিক রীতি এই সময়ে দেখা যায়।',
-      'অগ্রহায়ণ': 'নতুন ধান, নবান্ন ও ফসল ঘরে তোলার আনন্দের মাস।',
-      'পৌষ': 'শীত, পিঠে-পুলি, পৌষ পার্বণ ও গ্রামীণ মেলার আবহে ভরা।',
-      'মাঘ': 'শীতের শেষভাগ; সরস্বতী পূজা, শিক্ষা ও বসন্তের আগমনী বার্তা।',
-      'ফাল্গুন': 'ফুল, বসন্ত, দোল ও রঙের উৎসবের মাস।',
-      'চৈত্র':
-          'বাংলা বছরের শেষ মাস; চৈত্র সংক্রান্তি, গাজন ও নতুন বছরের প্রস্তুতি।',
-    };
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '📖 ${info.name}',
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              stories[info.name]!,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                height: 1.6,
-              ),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => _pickMainDate(),
-              icon: const Icon(Icons.calendar_month),
-              label: const Text('অন্য মাস দেখুন'),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _alpana() => [
-    _glass(
-      Column(
-        children: [
-          _heading('Procedural Alpana Preview'),
-          const SizedBox(
-            height: 260,
-            child: CustomPaint(
-              painter: Phase18AlpanaPainter(),
-              child: SizedBox.expand(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _note(
-            'এই pattern app-এর ভেতরেই আঁকা হচ্ছে—কোনো copyrighted artwork ব্যবহার করা হয়নি। পরে Share Studio-র background হিসেবে ব্যবহার করা যাবে।',
-          ),
-        ],
-      ),
-    ),
-  ];
-
-  List<Widget> _festivalRoute(BuildContext context) {
-    const steps = [
-      ['🌿', 'মহাষষ্ঠী', 'বোধন • আমন্ত্রণ • অধিবাস'],
-      ['🌱', 'মহাসপ্তমী', 'নবপত্রিকা • পূজা'],
-      ['🔱', 'মহাষ্টমী', 'অষ্টমী পূজা • সন্ধিপূজা'],
-      ['🔥', 'মহানবমী', 'নবমী পূজা • হোম'],
-      ['🌺', 'বিজয়া দশমী', 'বরণ • সিঁদুর • বিসর্জন/বিজয়া'],
-    ];
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('দুর্গোৎসব Route Timeline'),
-            ...List.generate(
-              steps.length,
-              (i) => Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Column(
-                    children: [
-                      Text(steps[i][0], style: const TextStyle(fontSize: 24)),
-                      if (i < steps.length - 1)
-                        Container(
-                          width: 2,
-                          height: 42 * _tsFactor(context),
-                          color: const Color(
-                            0xFFFFD36E,
-                          ).withValues(alpha: 0.35),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 3, bottom: 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            steps[i][1],
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          Text(
-                            steps[i][2],
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 11.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _note(
-              'সময়/আচার স্থানীয় পঞ্জিকা ও পারিবারিক রীতি অনুযায়ী ভিন্ন হতে পারে। Live Timing screen-এ calculated তিথি transition আলাদাভাবে দেখানো হয়।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _tithiClock() {
-    final now = DateTime.now();
-    final t = PanchangCalculator.tithiFor(now);
-    final timing = PanchangCalculator.tithiTiming(now);
-    final nextMoment = timing.$2.add(const Duration(minutes: 2));
-    final next = PanchangCalculator.tithiFor(nextMoment);
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '🌙 ${t.paksha} ${t.name}',
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 21,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _line(
-              '▶️',
-              'লেগেছে',
-              '${_dateLabel(timing.$1)} • ${bnTime12(timing.$1)}',
-            ),
-            _line(
-              '⏹️',
-              'শেষ হবে',
-              '${_dateLabel(timing.$2)} • ${bnTime12(timing.$2)}',
-            ),
-            _line(
-              '⏳',
-              'বাকি',
-              _duration(timing.$2.difference(now)),
-              valueColor: const Color(0xFF8EF2D7),
-            ),
-            _line('➡️', 'এরপর', '${next.paksha} ${next.name}'),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  DateTime? _nextChandradarshan() {
-    final amavasya = BengaliCalendarData.findAuspiciousDates(
-      'amabasya',
-      count: 1,
-      maxDays: 90,
-    );
-    if (amavasya.isEmpty) return null;
-    final day = amavasya.first.add(const Duration(days: 1));
-    final sun = PanchangCalculator.sunTimes(
-      day,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    return sun.sunset.add(const Duration(minutes: 20));
-  }
-
-  Future<void> _scheduleMoonAlert() async {
-    final d = _nextChandradarshan();
-    if (d == null) return;
-    await NotificationService.instance.scheduleGeneric(
-      980117,
-      '🌙 চন্দ্রদর্শন',
-      'অমাবস্যার পর প্রথম সন্ধ্যার চাঁদ দেখার সম্ভাব্য সময়',
-      d,
-    );
-    if (mounted)
-      setState(
-        () => _status = '✅ ${_dateLabel(d)} • ${bnTime12(d)} reminder set',
-      );
-  }
-
-  List<Widget> _moonAlert() {
-    final d = _nextChandradarshan();
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('পরবর্তী চন্দ্রদর্শন window'),
-            _line(
-              '🌙',
-              'সম্ভাব্য সময়',
-              d == null ? 'তথ্য নেই' : '${_dateLabel(d)} • ${bnTime12(d)}',
-            ),
-            FilledButton.icon(
-              onPressed: d == null ? null : _scheduleMoonAlert,
-              icon: const Icon(Icons.notifications_active),
-              label: const Text('Alert সেট করুন'),
-            ),
-            if (_status.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _status,
-                  style: const TextStyle(color: Color(0xFF8EF2D7)),
-                ),
-              ),
-            const SizedBox(height: 8),
-            _note(
-              'এটি অমাবস্যার পরের সন্ধ্যার একটি আনুমানিক viewing reminder; বাস্তব দৃশ্যমানতা আবহাওয়া ও স্থানীয় দিগন্তের ওপর নির্ভর করে।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _yatra() {
-    final sun = PanchangCalculator.sunTimes(
-      _date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final rahu = PanchangCalculator.rahuKalam(
-      _date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final abh = PanchangCalculator.abhijitMuhurta(
-      _date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('যাত্রা পরিকল্পনা • ${_dateLabel(_date)}'),
-            _line(
-              '🌅',
-              'Daylight',
-              '${bnTime12(sun.sunrise)} – ${bnTime12(sun.sunset)}',
-            ),
-            _line(
-              '⚠️',
-              'রাহুকাল',
-              '${bnTime12(rahu['start']!)} – ${bnTime12(rahu['end']!)}',
-            ),
-            _line(
-              '✨',
-              'অভিজিৎ',
-              abh['applicable'] == true
-                  ? '${bnTime12(abh['start'] as DateTime)} – ${bnTime12(abh['end'] as DateTime)}'
-                  : 'আজ প্রযোজ্য নয়',
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => _pickMainDate(
-                firstYear: DateTime.now().year,
-                lastYear: DateTime.now().year + 2,
-              ),
-              icon: const Icon(Icons.calendar_month),
-              label: const Text('যাত্রার তারিখ বদলান'),
-            ),
-            const SizedBox(height: 8),
-            _note(
-              'এটি ঐতিহ্যভিত্তিক planning helper। বাস্তব যাত্রায় আবহাওয়া, রাস্তা, পরিবহন ও নিরাপত্তাকে সর্বোচ্চ অগ্রাধিকার দিন।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _heritage() {
-    const places = [
-      ['🏛️', 'কলকাতা', 'ঐতিহাসিক শহর • সাহিত্য • স্থাপত্য'],
-      ['🎨', 'শান্তিনিকেতন', 'শিক্ষা • শিল্প • রবীন্দ্র ঐতিহ্য'],
-      ['🏺', 'বিষ্ণুপুর', 'টেরাকোটা মন্দির • সঙ্গীত'],
-      ['🕌', 'মুর্শিদাবাদ', 'নবাবি ইতিহাস • স্থাপত্য'],
-      ['🛕', 'তারাপীঠ', 'শাক্ত ঐতিহ্য • তীর্থ'],
-      ['🌉', 'দক্ষিণেশ্বর', 'মন্দির • রামকৃষ্ণ ঐতিহ্য'],
-      ['🕉️', 'বেলুড় মঠ', 'রামকৃষ্ণ মিশন • স্থাপত্য'],
-      ['🌳', 'জয়রামবাটি-কামারপুকুর', 'শ্রীমা ও রামকৃষ্ণ স্মৃতি'],
-    ];
-    return [
-      ...places.map(
-        (p) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: _glass(
-            Row(
-              children: [
-                Text(p[0], style: const TextStyle(fontSize: 25)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        p[1],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      Text(
-                        p[2],
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 11.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      _note(
-        'এটি offline heritage guide; navigation/map distance নয়। পরে verified map dataset/API যোগ করলে interactive map করা যাবে।',
-      ),
-    ];
-  }
-
-  List<Widget> _soundMode() {
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('Festival Sound Mode'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: () async {
-                    try {
-                      await SystemSound.play(SystemSoundType.alert);
-                    } catch (_) {}
-                  },
-                  icon: const Text('🔔'),
-                  label: const Text('Bell Tone'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    try {
-                      await SystemSound.play(SystemSoundType.click);
-                    } catch (_) {}
-                  },
-                  icon: const Text('🪘'),
-                  label: const Text('Soft Beat'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => TtsService.instance.speak(
-                    'শুভ দিন। শান্ত মনে প্রার্থনা করুন।',
-                  ),
-                  icon: const Text('🕉️'),
-                  label: const Text('বাংলা Voice'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            _note(
-              'বর্তমানে device tone + existing Bengali TTS ব্যবহার করা হয়েছে; custom শঙ্খ/ঢাক audio asset যোগ না করে build হালকা রাখা হয়েছে।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _calculator() {
-    final diff = _date2.difference(_date).inDays.abs();
-    final t = PanchangCalculator.tithiFor(_date);
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('Date / Panchang Calculator'),
-            _line(
-              '1️⃣',
-              'প্রথম তারিখ',
-              '${_dateLabel(_date)} • ${_bengaliDate(_date)}',
-            ),
-            _line(
-              '2️⃣',
-              'দ্বিতীয় তারিখ',
-              '${_dateLabel(_date2)} • ${_bengaliDate(_date2)}',
-            ),
-            _line('🧮', 'ব্যবধান', '${bnNum(diff)} দিন'),
-            _line('🌙', 'প্রথম তারিখের তিথি', '${t.paksha} ${t.name}'),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _pickMainDate(),
-                    child: const Text('১ম তারিখ'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final d = await showDatePicker(
-                        context: context,
-                        initialDate: _date2,
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime(2100, 12, 31),
-                      );
-                      if (d != null && mounted) setState(() => _date2 = d);
-                    },
-                    child: const Text('২য় তারিখ'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _dateExplorer() {
-    final t = PanchangCalculator.tithiFor(_date);
-    final n = PanchangCalculator
-        .nakshatraNames[PanchangCalculator.nakshatraIndexFor(_date)];
-    final r =
-        PanchangCalculator.rashiNames[PanchangCalculator.rashiIndexFor(_date)];
-    final events = BengaliCalendarData.eventsFor(_date);
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _bengaliDate(_date),
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              _dateLabel(_date),
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const Divider(color: Colors.white12, height: 22),
-            _line('🌙', 'তিথি', '${t.paksha} ${t.name}'),
-            _line('⭐', 'নক্ষত্র', n),
-            _line('♋', 'চন্দ্র রাশি', r),
-            _line(
-              '🎊',
-              'ইভেন্ট',
-              events.isEmpty
-                  ? 'কোনো সংরক্ষিত বিশেষ দিন নেই'
-                  : events.map((e) => e.label).join(' • '),
-            ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: () => _pickMainDate(firstYear: 1900, lastYear: 2100),
-              icon: const Icon(Icons.travel_explore),
-              label: const Text('১৯০০–২১০০ তারিখ বাছুন'),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _nightPanchang() {
-    final now = DateTime.now();
-    final t = PanchangCalculator.tithiFor(now);
-    final moon = PanchangCalculator.celestialAltAz(
-      'moon',
-      now,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final age = PanchangCalculator.moonAgeDays(now) % 29.530588853;
-    final illum = ((1 - math.cos(age / 29.530588853 * 2 * math.pi)) / 2 * 100)
-        .round();
-    const planets = ['venus', 'mars', 'jupiter', 'saturn'];
-    final visible = <String>[];
-    const pName = {
-      'venus': 'শুক্র',
-      'mars': 'মঙ্গল',
-      'jupiter': 'বৃহস্পতি',
-      'saturn': 'শনি',
-    };
-    for (final p in planets) {
-      final x = PanchangCalculator.celestialAltAz(
-        p,
-        now,
-        lat: AppLocation.lat,
-        lon: AppLocation.lon,
-      );
-      if (x['altitude']! > 0)
-        visible.add('${pName[p]} (${_direction(x['azimuth']!)})');
-    }
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('🌠 Night Panchang'),
-            _line(
-              '🌙',
-              'চাঁদ',
-              moon['altitude']! > 0
-                  ? '${_direction(moon['azimuth']!)} • উচ্চতা ${bnNum(moon['altitude']!.round())}°'
-                  : 'দিগন্তের নিচে',
-            ),
-            _line('🌗', 'Illumination', '${bnNum(illum)}%'),
-            _line('📜', 'তিথি', '${t.paksha} ${t.name}'),
-            _line(
-              '🪐',
-              'দিগন্তের ওপরে',
-              visible.isEmpty ? 'প্রধান গ্রহ নেই' : visible.join(' • '),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _dutyBoard() {
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: _heading('পরিবারের পূজার দায়িত্ব')),
-                FilledButton.icon(
-                  onPressed: _addDuty,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add'),
-                ),
-              ],
-            ),
-            if (_records.isEmpty)
-              _note('এখনও কোনো দায়িত্ব যোগ করা হয়নি।')
-            else
-              ...List.generate(_records.length, (i) {
-                final r = _records[i];
-                return CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: r['done'] == true,
-                  activeColor: const Color(0xFFFFD36E),
-                  checkColor: const Color(0xFF07172F),
-                  title: Text(
-                    '${r['who']} • ${r['task']}',
-                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
-                  ),
-                  onChanged: (v) async {
-                    setState(() => r['done'] = v == true);
-                    await _saveRecords();
-                  },
-                );
-              }),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  Future<void> _cacheFestivalPack() async {
-    final p = await SharedPreferences.getInstance();
-    final items = BengaliCalendarData.upcomingFestivals(
-      count: 30,
-      maxDays: 365,
-    );
-    await p.setString('${_key}_data', jsonEncode(items));
-    await p.setInt('${_key}_at', DateTime.now().millisecondsSinceEpoch);
-    if (mounted)
-      setState(
-        () => _status =
-            '✅ ${items.length}টি upcoming festival local cache-এ রাখা হয়েছে',
-      );
-  }
-
-  List<Widget> _offlinePack() {
-    final items = BengaliCalendarData.upcomingFestivals(
-      count: 12,
-      maxDays: 365,
-    );
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _heading('Offline Festival Pack'),
-            ...items
-                .take(8)
-                .map(
-                  (f) => _line(
-                    f['icon'] ?? '🎊',
-                    f['title'] ?? 'উৎসব',
-                    f['date'] ?? '',
-                  ),
-                ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: _cacheFestivalPack,
-              icon: const Icon(Icons.download_for_offline),
-              label: const Text('১ বছরের pack cache করুন'),
-            ),
-            if (_status.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _status,
-                  style: const TextStyle(
-                    color: Color(0xFF8EF2D7),
-                    fontSize: 11.5,
-                  ),
-                ),
-              ),
-            const SizedBox(height: 8),
-            _note(
-              'এটি app-এর calculated festival summary local storage-এ রাখে; internet না থাকলেও cached list ব্যবহার করা যাবে।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  Future<void> _saveSilent() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setBool('${_key}_enabled', _silentEnabled);
-    await p.setString('${_key}_a', _timeKey(_timeA));
-    await p.setString('${_key}_b', _timeKey(_timeB));
-    if (mounted) setState(() => _status = '✅ Silent hours saved');
-  }
-
-  List<Widget> _silentHours() {
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: _silentEnabled,
-              activeThumbColor: const Color(0xFFFFD36E),
-              title: const Text(
-                'Smart Silent Hours',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              onChanged: (v) => setState(() => _silentEnabled = v),
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'শুরু',
-                style: TextStyle(color: Colors.white70),
-              ),
-              trailing: Text(
-                _timeA.format(context),
-                style: const TextStyle(color: Color(0xFFFFD36E)),
-              ),
-              onTap: () async {
-                final t = await _pickClock(_timeA);
-                if (t != null) setState(() => _timeA = t);
-              },
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('শেষ', style: TextStyle(color: Colors.white70)),
-              trailing: Text(
-                _timeB.format(context),
-                style: const TextStyle(color: Color(0xFFFFD36E)),
-              ),
-              onTap: () async {
-                final t = await _pickClock(_timeB);
-                if (t != null) setState(() => _timeB = t);
-              },
-            ),
-            FilledButton.icon(
-              onPressed: _saveSilent,
-              icon: const Icon(Icons.save),
-              label: const Text('Save'),
-            ),
-            if (_status.isNotEmpty)
-              Text(_status, style: const TextStyle(color: Color(0xFF8EF2D7))),
-            const SizedBox(height: 8),
-            _note(
-              'এই setting Phase-18 থেকে তৈরি নতুন alerts-এর quiet-time preference হিসেবে সংরক্ষিত থাকে। System/পুরোনো reminder-এর আচরণ Android/iOS notification policy-এর ওপর নির্ভর করে।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _memoryTimeline() {
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: _heading('Festival Memory Timeline')),
-                FilledButton.icon(
-                  onPressed: _addMemory,
-                  icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-                  label: const Text('Note'),
-                ),
-              ],
-            ),
-            if (_records.isEmpty)
-              _note('প্রথম উৎসবের স্মৃতি লিখে রাখুন।')
-            else
-              ..._records.map((r) {
-                final d = DateTime.fromMillisecondsSinceEpoch(
-                  (r['date'] as num).toInt(),
-                );
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('🎞️', style: TextStyle(fontSize: 22)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              r['title'].toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            Text(
-                              _dateLabel(d),
-                              style: const TextStyle(
-                                color: Color(0xFFFFD36E),
-                                fontSize: 10.5,
-                              ),
-                            ),
-                            if (r['note'].toString().isNotEmpty)
-                              Text(
-                                r['note'].toString(),
-                                style: const TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 11.5,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            const SizedBox(height: 8),
-            _note(
-              'বর্তমানে lightweight text-memory রাখা হয়; photo picker dependency না বাড়িয়ে app build হালকা রাখা হয়েছে।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  void _toggleMeditation() {
-    if (_meditationRunning) {
-      _meditationTimer?.cancel();
-      setState(() => _meditationRunning = false);
-      return;
-    }
-    if (_meditationSeconds <= 0) _meditationSeconds = 180;
-    setState(() => _meditationRunning = true);
-    _meditationTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) return;
-      setState(() {
-        _meditationSeconds--;
-        _breathPhase = (_breathPhase + 1) % 12;
-        if (_meditationSeconds <= 0) {
-          t.cancel();
-          _meditationRunning = false;
-          SystemSound.play(SystemSoundType.alert).catchError((_) {});
-        }
-      });
-    });
-  }
-
-  List<Widget> _meditation() {
-    final phase = _breathPhase < 4
-        ? 'শ্বাস নিন'
-        : (_breathPhase < 6 ? 'ধরে রাখুন' : 'শ্বাস ছাড়ুন');
-    return [
-      _glass(
-        Column(
-          children: [
-            _heading('Meditation & Breath Timer'),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 700),
-              width: _meditationRunning ? 150 : 115,
-              height: _meditationRunning ? 150 : 115,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF6E4BC6).withValues(alpha: 0.30),
-                border: Border.all(
-                  color: const Color(0xFFFFD36E).withValues(alpha: 0.55),
-                  width: 2,
-                ),
-              ),
-              alignment: Alignment.center,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    phase,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${bnNum(_meditationSeconds ~/ 60)}:${bnNum(_meditationSeconds % 60).padLeft(2, '০')}',
-                    style: const TextStyle(
-                      color: Color(0xFFFFD36E),
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              children: [60, 180, 300]
-                  .map(
-                    (s) => ChoiceChip(
-                      label: Text('${s ~/ 60} min'),
-                      selected: !_meditationRunning && _meditationSeconds == s,
-                      onSelected: _meditationRunning
-                          ? null
-                          : (_) => setState(() => _meditationSeconds = s),
-                    ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed: _toggleMeditation,
-              icon: Icon(_meditationRunning ? Icons.pause : Icons.play_arrow),
-              label: Text(_meditationRunning ? 'Pause' : 'Start'),
-            ),
-            const SizedBox(height: 8),
-            _note(
-              'এটি সাধারণ relaxation timer; চিকিৎসা বা শ্বাস-প্রশ্বাসের থেরাপি নয়। অস্বস্তি হলে বন্ধ করুন।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _todayOneTap() {
-    final now = DateTime.now();
-    final t = PanchangCalculator.tithiFor(now);
-    final sun = PanchangCalculator.sunTimes(
-      now,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final rahu = PanchangCalculator.rahuKalam(
-      now,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final festivals = BengaliCalendarData.upcomingFestivals(count: 1);
-    return [
-      _glass(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _bengaliDate(now),
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              _dateLabel(now),
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const Divider(color: Colors.white12, height: 22),
-            _line('🌙', 'তিথি', '${t.paksha} ${t.name}'),
-            _line('🌅', 'সূর্যোদয়', bnTime12(sun.sunrise)),
-            _line('🌇', 'সূর্যাস্ত', bnTime12(sun.sunset)),
-            _line(
-              '⚠️',
-              'রাহুকাল',
-              '${bnTime12(rahu['start']!)} – ${bnTime12(rahu['end']!)}',
-            ),
-            _line(
-              '🎊',
-              'পরবর্তী উৎসব',
-              festivals.isEmpty
-                  ? 'তথ্য নেই'
-                  : '${festivals.first['title']} • ${festivals.first['date']}',
-            ),
-            _line(
-              '🔔',
-              'Reminder',
-              '${bnNum(ReminderStore.instance.items.where((r) => r.when.isAfter(now)).length)} upcoming',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _streakCard() {
-    return [
-      _glass(
-        Column(
-          children: [
-            const Text('🏆', style: TextStyle(fontSize: 58)),
-            Text(
-              '${bnNum(_streak)} দিনের streak',
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _note(
-              'প্রতিদিন এই feature খুললে streak বাড়বে। এক দিনের বেশি gap হলে নতুন streak শুরু হবে। কোনো টাকা/পুরস্কার বা gambling নেই—শুধু personal engagement badge।',
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _content() {
-    switch (widget.feature.id) {
-      case 'sky_map':
-        return _skyMap();
-      case 'eclipse':
-        return _eclipseCenter();
-      case 'tide':
-        return _tide();
-      case 'season':
-        return _season();
-      case 'sun_direction':
-        return _sunDirection(context);
-      case 'lamp':
-        return _lampMode();
-      case 'brahma':
-        return _brahma();
-      case 'samagri':
-        return _samagri();
-      case 'anniversary':
-        return _anniversary(birthday: false);
-      case 'birthday':
-        return _anniversary(birthday: true);
-      case 'tithi_anniversary':
-        return _tithiAnniversary();
-      case 'temple_bell':
-        return _templeBell();
-      case 'month_story':
-        return _monthStory();
-      case 'alpana':
-        return _alpana();
-      case 'festival_route':
-        return _festivalRoute(context);
-      case 'tithi_clock':
-        return _tithiClock();
-      case 'moon_alert':
-        return _moonAlert();
-      case 'yatra':
-        return _yatra();
-      case 'heritage':
-        return _heritage();
-      case 'sound':
-        return _soundMode();
-      case 'calculator':
-        return _calculator();
-      case 'date100':
-        return _dateExplorer();
-      case 'night':
-        return _nightPanchang();
-      case 'duty':
-        return _dutyBoard();
-      case 'offline_pack':
-        return _offlinePack();
-      case 'silent':
-        return _silentHours();
-      case 'memory':
-        return _memoryTimeline();
-      case 'meditation':
-        return _meditation();
-      case 'today':
-        return _todayOneTap();
-      case 'streak':
-        return _streakCard();
-    }
-    return [_glass(_note('Feature data unavailable'))];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return CosmicBackground(
-      child: Column(
-        children: [
-          _ScreenHeader(
-            title: '${widget.feature.icon} ${widget.feature.title}',
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 32),
-              children: [
-                _glass(
-                  Row(
-                    children: [
-                      Text(
-                        widget.feature.icon,
-                        style: const TextStyle(fontSize: 34),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.feature.title,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              widget.feature.subtitle,
-                              style: const TextStyle(
-                                color: Colors.white60,
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFF2FBFA3,
-                          ).withValues(alpha: 0.17),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Text(
-                          'NON-AI',
-                          style: TextStyle(
-                            color: Color(0xFF8EF2D7),
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ..._content(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class Phase18AlpanaPainter extends CustomPainter {
-  const Phase18AlpanaPainter();
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = math.min(size.width, size.height) * 0.36;
-    final gold = Paint()
-      ..color = const Color(0xFFFFD36E).withValues(alpha: 0.88)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final soft = Paint()
-      ..color = Colors.white.withValues(alpha: 0.62)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-    canvas.drawCircle(c, r * 0.35, gold);
-    canvas.drawCircle(c, r * 0.70, soft);
-    canvas.drawCircle(c, r, gold);
-    for (int i = 0; i < 12; i++) {
-      final a = i * math.pi * 2 / 12;
-      final p1 = c + Offset(math.cos(a), math.sin(a)) * r * 0.42;
-      final p2 = c + Offset(math.cos(a), math.sin(a)) * r * 0.95;
-      canvas.drawLine(p1, p2, soft);
-      final petal = Rect.fromCenter(
-        center: c + Offset(math.cos(a), math.sin(a)) * r * 0.70,
-        width: r * 0.23,
-        height: r * 0.38,
-      );
-      canvas.save();
-      canvas.translate(petal.center.dx, petal.center.dy);
-      canvas.rotate(a);
-      canvas.translate(-petal.center.dx, -petal.center.dy);
-      canvas.drawOval(petal, gold);
-      canvas.restore();
-    }
-    for (int i = 0; i < 24; i++) {
-      final a = i * math.pi * 2 / 24;
-      final p = c + Offset(math.cos(a), math.sin(a)) * r * 1.10;
-      canvas.drawCircle(p, 2.3, soft);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class SuperServicesScreen extends StatelessWidget {
@@ -29946,10 +25930,6 @@ class SuperServicesScreen extends StatelessWidget {
         pushPage(const VastuHomeChecklistScreen());
         return;
 
-      case 'Latest 30 Update':
-        pushPage(const Phase18Latest30HubScreen());
-        return;
-
       case 'Super 30 Features':
         pushPage(const Super30FeaturesScreen());
         return;
@@ -30111,11 +26091,11 @@ class SuperServicesScreen extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: items.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
             crossAxisSpacing: 9,
             mainAxisSpacing: 9,
-            mainAxisExtent: 112 * _tsFactor(context),
+            childAspectRatio: 0.98,
           ),
           itemBuilder: (context, index) {
             final item = items[index];
@@ -30215,8 +26195,6 @@ class SuperServicesScreen extends StatelessWidget {
       _SuperServiceData('📝', 'আমার Notes'),
     ];
 
-    const latest30 = [_SuperServiceData('🆕', 'Latest 30 Update')];
-
     const nextGen = [
       _SuperServiceData('💎', 'Super 30 Features'),
       _SuperServiceData('🕰️', 'Time Machine'),
@@ -30300,7 +26278,6 @@ class SuperServicesScreen extends StatelessWidget {
             _section(context, '🧠 Personal Intelligence', personal),
             _section(context, '⚡ Reminder & Routine', automation),
             _section(context, '🗺️ Life Overview', insight),
-            _section(context, '🆕 Latest 30 • Phase 18', latest30),
             _section(context, '🚀 Next-Gen Tools', nextGen),
             _section(context, '🌟 Daily & Quality 2.0', phase14),
             _section(context, '🏠 গৃহ ও বাস্তু', vastu),
@@ -30959,7 +26936,7 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                 children: [
                   // ---- ট্যাব বার (ফিল্টার) ----
                   SizedBox(
-                    height: 34 * _tsFactor(context),
+                    height: 34,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _tabs.length,
@@ -31114,14 +27091,13 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                         addRepaintBoundaries: false,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: leading + totalDays + trailing,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 7,
-                          mainAxisSpacing: 4,
-                          crossAxisSpacing: 4,
-                          // ঘর চৌকো — চওড়া যত, উচ্চতাও প্রায় তত।
-                          // লেখা বড় করা থাকলে ঘরও সেই অনুপাতে বড় হয়।
-                          childAspectRatio: 1 / (1.30 * _tsFactor(context)),
-                        ),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 7,
+                              mainAxisSpacing: 3,
+                              crossAxisSpacing: 3,
+                              mainAxisExtent: 88,
+                            ),
                         itemBuilder: (context, i) {
                           // --- আগের মাসের গ্রে করা দিনগুলো ---
                           if (i < leading) {
@@ -31394,43 +27370,12 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                                     ],
                                   ),
                                   const SizedBox(height: 10),
-                                  InkWell(
-                                    onTap: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            PanchangOccasionDetailScreen(
-                                              date: sel,
-                                            ),
-                                      ),
-                                    ),
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 6,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              '🕉 ${tithi.name} তিথি — শুরু: ${ContentData._fmtTithiEdge(tithiStart)}  •  শেষ: ${ContentData._fmtTithiEdge(tithiEnd)}',
-                                              style: const TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: 12,
-                                                height: 1.5,
-                                              ),
-                                            ),
-                                          ),
-                                          const Text(
-                                            'পূর্ণ বিস্তারিত ›',
-                                            style: TextStyle(
-                                              color: Color(0xFFFFD36E),
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                  Text(
+                                    '🕉 ${tithi.name} তিথি — শুরু: ${ContentData._fmtTithiEdge(tithiStart)}  •  শেষ: ${ContentData._fmtTithiEdge(tithiEnd)}',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                      height: 1.5,
                                     ),
                                   ),
                                   Divider(
@@ -31451,45 +27396,11 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                                         padding: const EdgeInsets.only(
                                           bottom: 4,
                                         ),
-                                        child: InkWell(
-                                          onTap: () => Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  PanchangOccasionDetailScreen(
-                                                    date: sel,
-                                                    event: e,
-                                                  ),
-                                            ),
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 6,
-                                              horizontal: 2,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    '${e.icon} ${e.label}',
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const Icon(
-                                                  Icons.chevron_right_rounded,
-                                                  color: Color(0xFFFFD36E),
-                                                  size: 18,
-                                                ),
-                                              ],
-                                            ),
+                                        child: Text(
+                                          '${e.icon} ${e.label}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
                                           ),
                                         ),
                                       ),
@@ -31647,9 +27558,7 @@ class _MonthlyPanjikaSliderState extends State<_MonthlyPanjikaSlider> {
 
     return Container(
       width: double.infinity,
-      // ভিতরে ৩ লাইন লেখা — লেখা বড় করা থাকলে বক্সও তত বড় হবে,
-      // নইলে নিচের লাইনটা কেটে যেত
-      constraints: BoxConstraints(minHeight: 76 * _tsFactor(context)),
+      height: 76,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -31677,7 +27586,7 @@ class _MonthlyPanjikaSliderState extends State<_MonthlyPanjikaSlider> {
             children: [
               Container(
                 width: 48,
-                height: 48 * _tsFactor(context),
+                height: 48,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.13),
@@ -31940,7 +27849,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                 : widget.isToday
                 ? const Color(0xFFFFD36E).withValues(alpha: 0.18)
                 : const Color(0xFF07182E).withValues(alpha: 0.62),
-            borderRadius: BorderRadius.circular(9),
+            borderRadius: BorderRadius.circular(5),
             border: Border.all(
               color: widget.isSelected
                   ? const Color(0xFFFFD36E)
@@ -31971,7 +27880,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                           '${widget.greg.day} $monthShort',
                           maxLines: 1,
                           style: TextStyle(
-                            fontSize: 8.2,
+                            fontSize: 6.5,
                             height: 1,
                             fontWeight: FontWeight.w800,
                             color: widget.isSunday
@@ -32006,7 +27915,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                           '${tithi.paksha} ${tithi.name}',
                           maxLines: 1,
                           style: const TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 8.8,
                             height: 1,
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
@@ -32017,7 +27926,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                       const SizedBox(height: 2),
 
                       SizedBox(
-                        height: 14,
+                        height: 11,
                         width: double.infinity,
                         child: widget.isToday
                             ? AnimatedSwitcher(
@@ -32046,7 +27955,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                                       movingText,
                                       maxLines: 1,
                                       style: const TextStyle(
-                                        fontSize: 9.6,
+                                        fontSize: 7.4,
                                         height: 1,
                                         fontWeight: FontWeight.w600,
                                         color: Colors.white70,
@@ -32062,7 +27971,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                                     staticInfo,
                                     maxLines: 1,
                                     style: const TextStyle(
-                                      fontSize: 9.6,
+                                      fontSize: 7.4,
                                       height: 1,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.white70,
@@ -34195,7 +30104,7 @@ class _FestivalPosterScreenState extends State<FestivalPosterScreen> {
                 ),
                 const SizedBox(height: 14),
                 SizedBox(
-                  height: 40 * _tsFactor(context),
+                  height: 40,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     children: BengaliCalendarData.upcomingFestivals(count: 8)
@@ -35189,7 +31098,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
           children: [
             Container(
               width: 52,
-              height: 52 * _tsFactor(context),
+              height: 52,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.08),
@@ -35268,7 +31177,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
           children: [
             Container(
               width: 48,
-              height: 48 * _tsFactor(context),
+              height: 48,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.08),
@@ -35321,11 +31230,11 @@ class _PremiumScreenState extends State<PremiumScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _phase12PremiumFeatures.length,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
-        mainAxisExtent: 178 * _tsFactor(context),
+        childAspectRatio: 1.08,
       ),
       itemBuilder: (context, index) {
         final f = _phase12PremiumFeatures[index];
@@ -36067,7 +31976,7 @@ class _Phase15LiveSolarSystemScreenState
                 ),
                 const SizedBox(height: 5),
                 SizedBox(
-                  height: 44 * _tsFactor(context),
+                  height: 44,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _phase15Planets.length,
@@ -36153,7 +32062,7 @@ class _Phase15PlanetExplorerCard extends StatelessWidget {
             children: [
               Container(
                 width: 50,
-                height: 50 * _tsFactor(context),
+                height: 50,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -37060,7 +32969,7 @@ class _Phase12PremiumHeritageHomeCard extends StatelessWidget {
               children: [
                 Container(
                   width: 50,
-                  height: 50 * _tsFactor(context),
+                  height: 50,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
@@ -37218,11 +33127,11 @@ class Phase12PremiumHeritageHubScreen extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: _phase12PremiumFeatures.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
-                    mainAxisExtent: 174 * _tsFactor(context),
+                    childAspectRatio: 1.16,
                   ),
                   itemBuilder: (context, i) {
                     final f = _phase12PremiumFeatures[i];
@@ -38855,7 +34764,7 @@ class Phase14QualityCenterScreen extends StatelessWidget {
                         children: [
                           Container(
                             width: 42,
-                            height: 42 * _tsFactor(context),
+                            height: 42,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.07),
@@ -38994,7 +34903,7 @@ class _Phase14AdvancedMoonCenterScreenState
                     children: [
                       Container(
                         width: 86,
-                        height: 86 * _tsFactor(context),
+                        height: 86,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: RadialGradient(
@@ -39676,7 +35585,7 @@ class Phase14BengaliYearTimelineScreen extends StatelessWidget {
                         children: [
                           Container(
                             width: 34,
-                            height: 34 * _tsFactor(context),
+                            height: 34,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
@@ -39995,11 +35904,11 @@ class _Phase14ThemeStoreScreenState extends State<Phase14ThemeStoreScreen> {
             child: GridView.builder(
               padding: const EdgeInsets.all(14),
               itemCount: themes.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
-                childAspectRatio: 1.15 / _tsFactor(context),
+                childAspectRatio: 1.15,
               ),
               itemBuilder: (context, i) {
                 final t = themes[i];
@@ -40881,11 +36790,11 @@ class Phase14PremiumDashboardCard extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: cats.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
-              mainAxisExtent: 72 * _tsFactor(context),
+              childAspectRatio: 2.35,
             ),
             itemBuilder: (context, i) {
               final x = cats[i];
@@ -40948,1041 +36857,3 @@ class Phase14PremiumDashboardCard extends StatelessWidget {
     );
   }
 }
-
-// =====================================================================
-// ছুটির দিন — পুরো বছরের ছুটি, লম্বা ছুটি ও এক ক্লিকে রিমাইন্ডার
-// =====================================================================
-
-/// পুরো বছরের ছুটি/উৎসব এক তালিকায়। তারিখ নতুন করে হিসেব করা হয় না —
-/// অ্যাপে আগে থেকেই থাকা BengaliCalendarData.eventsFor() দিয়েই বছরের
-/// প্রতিটা দিন দেখে ছুটির দিনগুলো বেছে নেওয়া হয়।
-class HolidayScreen extends StatefulWidget {
-  const HolidayScreen({super.key});
-
-  @override
-  State<HolidayScreen> createState() => _HolidayScreenState();
-}
-
-class _HolidayEntry {
-  final DateTime date;
-  final String label;
-  final String icon;
-  final bool isNational;
-
-  /// এই ছুটি টানা কত দিনের বিরতির অংশ (রবিবার + পাশাপাশি ছুটি মিলিয়ে)।
-  /// ৩ বা তার বেশি হলে "লম্বা ছুটি"।
-  int streak;
-
-  /// একদিন ছুটি নিলেই লম্বা ছুটি হয়ে যায় (সেতু ছুটি)
-  bool bridge;
-
-  _HolidayEntry(
-    this.date,
-    this.label,
-    this.icon,
-    this.isNational, {
-    this.streak = 1,
-    this.bridge = false,
-  });
-}
-
-class _HolidayScreenState extends State<HolidayScreen> {
-  late int _year;
-  String _filter = 'সব';
-  List<_HolidayEntry>? _cache;
-  final _searchCtrl = TextEditingController();
-  bool _searching = false;
-  final _scrollCtrl = ScrollController();
-  final _thisMonthKey = GlobalKey();
-  bool _jumped = false;
-
-  static const _filters = ['সব', 'ভারতীয় ছুটির দিন', 'উৎসব', 'লম্বা ছুটি'];
-
-  /// ভারতে সরকারি ছুটি থাকে এমন দিন
-  static const _nationalNames = {
-    'ইংরেজি নববর্ষ',
-    'প্রজাতন্ত্র দিবস',
-    'স্বাধীনতা দিবস',
-    'গান্ধী জয়ন্তী',
-    'শ্রমিক দিবস',
-    'নেতাজি জন্মজয়ন্তী',
-    'স্বামী বিবেকানন্দ জন্মদিন',
-    'বড়দিন',
-    'মহাষষ্ঠী',
-    'মহাসপ্তমী',
-    'মহাষ্টমী',
-    'মহানবমী',
-    'বিজয়া দশমী',
-    'কালীপূজা / দীপাবলি',
-    'ভাইফোঁটা',
-    'দোলযাত্রা',
-    'মহাশিবরাত্রি',
-    'জন্মাষ্টমী',
-    'রাম নবমী',
-    'মহালয়া',
-    'সরস্বতী পূজা',
-    'রথযাত্রা',
-  };
-
-  /// এগুলো ছুটি নয় — প্রতি মাসেই ঘুরে ঘুরে আসে (ক্যালেন্ডার স্ক্রিনে
-  /// আগের মতোই দেখা যায়, শুধু ছুটির তালিকায় রাখা হয় না)
-  static const _skipCategories = {
-    'marriage',
-    'annaprashan',
-    'griha',
-    'byabosha',
-    'namakaran',
-    'ekadashi',
-    'purnima',
-    'amabasya',
-  };
-
-  @override
-  void initState() {
-    super.initState();
-    _year = DateTime.now().year;
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    _scrollCtrl.dispose();
-    super.dispose();
-  }
-
-  /// স্ক্রিন খোলার পর নিজে থেকেই চলতি মাসে নেমে আসে — ব্যবহারকারীকে
-  /// জানুয়ারি থেকে হাতে স্ক্রল করে নামতে হয় না
-  void _jumpToThisMonth() {
-    if (_jumped || _year != DateTime.now().year) return;
-    _jumped = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _thisMonthKey.currentContext;
-      if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutCubic,
-        alignment: 0.05,
-      );
-    });
-  }
-
-  // ------------------------------------------------------------------
-  // বছরের ছুটি বের করা + লম্বা ছুটির হিসেব
-  // ------------------------------------------------------------------
-  List<_HolidayEntry> _collect() {
-    if (_cache != null) return _cache!;
-
-    final out = <_HolidayEntry>[];
-    final seen = <String>{};
-    final holidayDays = <int>{}; // বছরের কত তম দিন — দ্রুত খোঁজার জন্য
-
-    var d = DateTime(_year, 1, 1);
-    final end = DateTime(_year, 12, 31);
-    while (!d.isAfter(end)) {
-      for (final e in BengaliCalendarData.eventsFor(d)) {
-        if (_skipCategories.contains(e.category)) continue;
-        final key = '${d.month}-${d.day}-${e.label}';
-        if (!seen.add(key)) continue;
-        out.add(
-          _HolidayEntry(d, e.label, e.icon, _nationalNames.contains(e.label)),
-        );
-        holidayDays.add(_dayOfYear(d));
-      }
-      d = d.add(const Duration(days: 1));
-    }
-
-    // ---- ছুটির দিন কিনা: ছুটি অথবা রবিবার ----
-    bool isOff(DateTime day) {
-      if (day.year != _year) return false;
-      return day.weekday == DateTime.sunday ||
-          holidayDays.contains(_dayOfYear(day));
-    }
-
-    for (final h in out) {
-      // পিছনে ও সামনে টানা কত দিন ছুটি
-      var count = 1;
-      var back = h.date.subtract(const Duration(days: 1));
-      while (isOff(back)) {
-        count++;
-        back = back.subtract(const Duration(days: 1));
-      }
-      var fwd = h.date.add(const Duration(days: 1));
-      while (isOff(fwd)) {
-        count++;
-        fwd = fwd.add(const Duration(days: 1));
-      }
-      h.streak = count;
-
-      // সেতু ছুটি: মাঝে মাত্র একটা কাজের দিন থাকলে, সেদিন ছুটি নিলেই
-      // টানা লম্বা বিরতি
-      if (count < 3) {
-        final prev2 = h.date.subtract(const Duration(days: 2));
-        final next2 = h.date.add(const Duration(days: 2));
-        if ((!isOff(h.date.subtract(const Duration(days: 1))) &&
-                isOff(prev2)) ||
-            (!isOff(h.date.add(const Duration(days: 1))) && isOff(next2))) {
-          h.bridge = true;
-        }
-      }
-    }
-
-    _cache = out;
-    return out;
-  }
-
-  int _dayOfYear(DateTime d) => d.difference(DateTime(d.year, 1, 1)).inDays;
-
-  void _changeYear(int delta) {
-    setState(() {
-      _year += delta;
-      _cache = null;
-    });
-  }
-
-  // ------------------------------------------------------------------
-  // এক ক্লিকে রিমাইন্ডার
-  // ------------------------------------------------------------------
-  Future<void> _setReminder(_HolidayEntry h) async {
-    final when = DateTime(h.date.year, h.date.month, h.date.day, 9);
-    if (when.isBefore(DateTime.now())) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('এই দিনটা পেরিয়ে গেছে')));
-      return;
-    }
-    await ReminderStore.instance.load();
-    await ReminderStore.instance.add(
-      ReminderItem('${h.icon} ${h.label}', when),
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${h.label} — ${bnNum(h.date.day)} ${gregMonthBn(h.date.month)} সকাল ৯টায় মনে করিয়ে দেব ⏰',
-        ),
-      ),
-    );
-  }
-
-  void _shareList(List<_HolidayEntry> list) {
-    final b = StringBuffer('🎊 ${bnNum(_year)} সালের ছুটির তালিকা\n');
-    var lastMonth = 0;
-    for (final h in list) {
-      if (h.date.month != lastMonth) {
-        lastMonth = h.date.month;
-        b.writeln('\n— ${gregMonthBn(lastMonth)} —');
-      }
-      final wd = PanchangCalculator.weekdayName(h.date);
-      b.writeln(
-        '${bnNum(h.date.day)} ($wd) • ${h.label}'
-        '${h.streak >= 3 ? '  [${bnNum(h.streak)} দিনের ছুটি]' : ''}',
-      );
-    }
-    b.writeln('\n— বাংলা পঞ্জিকা');
-    Share.share(b.toString(), subject: '${_year} সালের ছুটির তালিকা');
-  }
-
-  // ------------------------------------------------------------------
-
-  @override
-  Widget build(BuildContext context) {
-    final all = _collect();
-    _jumpToThisMonth();
-    final q = _searchCtrl.text.trim();
-
-    var list = switch (_filter) {
-      'ভারতীয় ছুটির দিন' => all.where((h) => h.isNational).toList(),
-      'উৎসব' => all.where((h) => !h.isNational).toList(),
-      'লম্বা ছুটি' => all.where((h) => h.streak >= 3).toList(),
-      _ => all,
-    };
-    if (q.isNotEmpty) {
-      list = list.where((h) => h.label.contains(q)).toList();
-    }
-
-    final byMonth = <int, List<_HolidayEntry>>{};
-    for (final h in list) {
-      byMonth.putIfAbsent(h.date.month, () => []).add(h);
-    }
-    final months = byMonth.keys.toList()..sort();
-
-    return CosmicBackground(
-      child: SafeArea(
-        child: Column(
-          children: [
-            _header(list),
-            if (_searching) _searchBox(),
-            Expanded(
-              child: ListView(
-                controller: _scrollCtrl,
-                padding: const EdgeInsets.fromLTRB(14, 4, 14, 90),
-                children: [
-                  _summaryCard(all),
-                  const SizedBox(height: 12),
-                  _yearBar(),
-                  const SizedBox(height: 10),
-                  _filterBar(),
-                  const SizedBox(height: 10),
-                  _helpStrip(),
-                  const SizedBox(height: 4),
-                  if (list.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 60),
-                      child: Center(
-                        child: Text(
-                          'কিছু পাওয়া যায়নি',
-                          style: TextStyle(color: Colors.white54),
-                        ),
-                      ),
-                    )
-                  else
-                    ...months.map((m) => _monthBlock(m, byMonth[m]!)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---- হেডার ----
-  Widget _header(List<_HolidayEntry> list) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 6, 10, 2),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
-          ),
-          const Expanded(
-            child: Text(
-              '🎊 ছুটির দিন',
-              style: TextStyle(
-                color: Color(0xFFFFD36E),
-                fontSize: 19,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: Icon(
-              _searching ? Icons.close_rounded : Icons.search_rounded,
-              color: const Color(0xFFFFD36E),
-            ),
-            tooltip: 'খুঁজুন',
-            onPressed: () => setState(() {
-              _searching = !_searching;
-              if (!_searching) _searchCtrl.clear();
-            }),
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.share_rounded,
-              color: Color(0xFFFFD36E),
-              size: 21,
-            ),
-            tooltip: 'তালিকা শেয়ার করুন',
-            onPressed: list.isEmpty ? null : () => _shareList(list),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _searchBox() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-      child: TextField(
-        controller: _searchCtrl,
-        autofocus: true,
-        style: const TextStyle(color: Colors.white, fontSize: 14),
-        onChanged: (_) => setState(() {}),
-        decoration: InputDecoration(
-          hintText: 'ছুটির নাম লিখুন…',
-          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-          filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.07),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 12,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---- সারসংক্ষেপ: পরবর্তী ছুটি + তিনটি সংখ্যা ----
-  Widget _summaryCard(List<_HolidayEntry> all) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final upcoming = all.where((h) => !h.date.isBefore(today)).toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
-    final next = upcoming.isEmpty ? null : upcoming.first;
-    final longCount = all.where((h) => h.streak >= 3).length;
-    final sundayCount = all
-        .where((h) => h.date.weekday == DateTime.sunday)
-        .length;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFF08172F).withValues(alpha: 0.80),
-            const Color(0xFF301A4D).withValues(alpha: 0.62),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFFFD36E).withValues(alpha: 0.30),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (next != null) ...[
-            Row(
-              children: [
-                Text(next.icon, style: const TextStyle(fontSize: 24)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'পরবর্তী ছুটি',
-                        style: TextStyle(color: Colors.white54, fontSize: 10.5),
-                      ),
-                      Text(
-                        next.label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w800,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _daysLeftChip(next.date.difference(today).inDays),
-              ],
-            ),
-            const Divider(height: 20, color: Colors.white24),
-          ],
-          Row(
-            children: [
-              _stat('${bnNum(all.length)}', 'মোট ছুটি'),
-              _stat('${bnNum(longCount)}', 'লম্বা ছুটি'),
-              _stat('${bnNum(sundayCount)}', 'রবিবারে'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _daysLeftChip(int days) {
-    final text = days == 0 ? 'আজ' : 'আর ${bnNum(days)} দিন';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFD36E).withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: const Color(0xFFFFD36E).withValues(alpha: 0.4),
-        ),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Color(0xFFFFD36E),
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-
-  Widget _stat(String value, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFFFFD36E),
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white54, fontSize: 10.5),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---- বছর ----
-  Widget _yearBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFFFD36E).withValues(alpha: 0.25),
-        ),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left, color: Color(0xFFFFD36E)),
-            tooltip: 'আগের বছর',
-            onPressed: () => _changeYear(-1),
-          ),
-          Expanded(
-            child: Text(
-              '${bnNum(_year)} সাল',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16.5,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right, color: Color(0xFFFFD36E)),
-            tooltip: 'পরের বছর',
-            onPressed: () => _changeYear(1),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---- ফিল্টার ----
-  Widget _filterBar() {
-    return SizedBox(
-      height: 36 * _tsFactor(context),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _filters.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final f = _filters[i];
-          final active = f == _filter;
-          return GestureDetector(
-            onTap: () => setState(() => _filter = f),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 15),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active
-                    ? const Color(0xFFFFD36E)
-                    : Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: const Color(0xFFFFD36E).withValues(alpha: 0.3),
-                ),
-              ),
-              child: Text(
-                f,
-                style: TextStyle(
-                  color: active ? const Color(0xFF08172F) : Colors.white70,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  // ---- মাসের ব্লক ----
-  Widget _monthBlock(int m, List<_HolidayEntry> items) {
-    final isThisMonth =
-        m == DateTime.now().month && _year == DateTime.now().year;
-    return Column(
-      key: isThisMonth ? _thisMonthKey : null,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-          child: Row(
-            children: [
-              Text(
-                gregMonthBn(m),
-                style: TextStyle(
-                  color: isThisMonth
-                      ? const Color(0xFFFFD36E)
-                      : Colors.white.withValues(alpha: 0.86),
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${bnNum(items.length)}টি',
-                style: const TextStyle(color: Colors.white38, fontSize: 11.5),
-              ),
-              if (isThisMonth) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD36E).withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Text(
-                    'চলতি মাস',
-                    style: TextStyle(
-                      color: Color(0xFFFFD36E),
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        ...items.map(_row),
-      ],
-    );
-  }
-
-  // ---- একটা ছুটির সারি ----
-  Widget _row(_HolidayEntry h) {
-    final isSunday = h.date.weekday == DateTime.sunday;
-    final info = BengaliDateUtil.monthInfoFor(h.date);
-    final bDay = h.date.difference(info.start).inDays + 1;
-    final now = DateTime.now();
-    final past = h.date.isBefore(DateTime(now.year, now.month, now.day));
-    final isLong = h.streak >= 3;
-
-    return Opacity(
-      opacity: past ? 0.45 : 1,
-      child: GestureDetector(
-        onTap: () => _openDetail(h),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-          decoration: BoxDecoration(
-            color: const Color(0xFF07182E).withValues(alpha: 0.62),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isLong
-                  ? const Color(0xFF6BE3A6).withValues(alpha: 0.5)
-                  : h.isNational
-                  ? const Color(0xFFFFD36E).withValues(alpha: 0.45)
-                  : Colors.white.withValues(alpha: 0.12),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 52 * _tsFactor(context),
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color:
-                      (isSunday
-                              ? const Color(0xFFFF8A80)
-                              : const Color(0xFFFFD36E))
-                          .withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      bnNum(h.date.day),
-                      style: TextStyle(
-                        color: isSunday
-                            ? const Color(0xFFFF8A80)
-                            : const Color(0xFFFFD36E),
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        height: 1.1,
-                      ),
-                    ),
-                    Text(
-                      PanchangCalculator.weekdayName(h.date),
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${h.icon} ${h.label}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w800,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${bnNum(bDay)} ${info.name} ${bnNum(info.year)}'
-                      '${h.isNational ? ' • ছুটির দিন' : ''}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 11,
-                      ),
-                    ),
-                    if (isLong || h.bridge) ...[
-                      const SizedBox(height: 5),
-                      _badge(
-                        isLong
-                            ? '🏖️ টানা ${bnNum(h.streak)} দিন ছুটি'
-                            : '💡 একদিন ছুটি নিলেই লম্বা ছুটি',
-                        isLong
-                            ? const Color(0xFF6BE3A6)
-                            : const Color(0xFF7FC4FF),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              if (!past)
-                IconButton(
-                  icon: const Icon(
-                    Icons.alarm_add_rounded,
-                    color: Color(0xFFFFD36E),
-                    size: 21,
-                  ),
-                  tooltip: 'রিমাইন্ডার সেট করুন',
-                  onPressed: () => _setReminder(h),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// রং/চিহ্নগুলো কী বোঝায় — এক লাইনে, যাতে দেখেই বোঝা যায়
-  Widget _helpStrip() {
-    Widget dot(Color c, String t) => Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: c),
-        ),
-        const SizedBox(width: 5),
-        Text(t, style: const TextStyle(color: Colors.white60, fontSize: 11)),
-      ],
-    );
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '👆 যেকোনো দিনে চাপ দিলে বিস্তারিত দেখা যাবে',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 14,
-            runSpacing: 7,
-            children: [
-              dot(const Color(0xFFFF8A80), 'রবিবার'),
-              dot(const Color(0xFFFFD36E), 'সরকারি ছুটি'),
-              dot(const Color(0xFF6BE3A6), 'লম্বা ছুটি'),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(
-                    Icons.alarm_add_rounded,
-                    size: 13,
-                    color: Color(0xFFFFD36E),
-                  ),
-                  SizedBox(width: 4),
-                  Text(
-                    'মনে করিয়ে দেবে',
-                    style: TextStyle(color: Colors.white60, fontSize: 11),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// একটা ছুটির পূর্ণ বিবরণ — চাপ দিলে নিচ থেকে উঠে আসে
-  void _openDetail(_HolidayEntry h) {
-    final info = BengaliDateUtil.monthInfoFor(h.date);
-    final bDay = h.date.difference(info.start).inDays + 1;
-    final sun = PanchangCalculator.sunTimes(
-      h.date,
-      lat: AppLocation.lat,
-      lon: AppLocation.lon,
-    );
-    final tithi = PanchangCalculator.tithiFor(sun.sunrise);
-    final nak = PanchangCalculator
-        .nakshatraNames[PanchangCalculator.nakshatraIndexFor(sun.sunrise)];
-    final now = DateTime.now();
-    final days = h.date
-        .difference(DateTime(now.year, now.month, now.day))
-        .inDays;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF0A1A31),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Text(h.icon, style: const TextStyle(fontSize: 32)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      h.label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        height: 1.25,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              _detailLine(
-                '📅',
-                'তারিখ',
-                '${bnNum(h.date.day)} ${gregMonthBn(h.date.month)} ${bnNum(h.date.year)}'
-                    ' • ${PanchangCalculator.weekdayName(h.date)}',
-              ),
-              _detailLine(
-                '🪔',
-                'বাংলা তারিখ',
-                '${bnNum(bDay)} ${info.name} ${bnNum(info.year)}',
-              ),
-              _detailLine('🌙', 'তিথি', '${tithi.paksha}পক্ষ ${tithi.name}'),
-              _detailLine('⭐', 'নক্ষত্র', nak),
-              _detailLine(
-                '🌅',
-                'সূর্যোদয় – সূর্যাস্ত',
-                '${bnTime12(sun.sunrise)} – ${bnTime12(sun.sunset)}',
-              ),
-              if (h.streak >= 3)
-                _detailLine(
-                  '🏖️',
-                  'লম্বা ছুটি',
-                  'রবিবার ও পাশের ছুটি মিলিয়ে টানা ${bnNum(h.streak)} দিন',
-                ),
-              if (h.bridge)
-                _detailLine(
-                  '💡',
-                  'পরামর্শ',
-                  'মাঝের একটা দিন ছুটি নিলেই টানা লম্বা ছুটি পাবেন',
-                ),
-              _detailLine(
-                '⏳',
-                'আর কত দিন',
-                days < 0
-                    ? 'পেরিয়ে গেছে'
-                    : days == 0
-                    ? 'আজই'
-                    : 'আর ${bnNum(days)} দিন বাকি',
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  if (days >= 0)
-                    Expanded(
-                      child: _sheetButton(
-                        Icons.alarm_add_rounded,
-                        'মনে করিয়ে দাও',
-                        () {
-                          Navigator.pop(sheetContext);
-                          _setReminder(h);
-                        },
-                      ),
-                    ),
-                  if (days >= 0) const SizedBox(width: 10),
-                  Expanded(
-                    child: _sheetButton(Icons.share_rounded, 'শেয়ার', () {
-                      Navigator.pop(sheetContext);
-                      Share.share(
-                        '${h.icon} ${h.label}\n'
-                        '${bnNum(h.date.day)} ${gregMonthBn(h.date.month)} ${bnNum(h.date.year)}'
-                        ' • ${PanchangCalculator.weekdayName(h.date)}\n'
-                        '${bnNum(bDay)} ${info.name} ${bnNum(info.year)}\n'
-                        '${tithi.paksha}পক্ষ ${tithi.name} • $nak'
-                        '${h.streak >= 3 ? '\n🏖️ টানা ${bnNum(h.streak)} দিন ছুটি' : ''}'
-                        '\n\n— বাংলা পঞ্জিকা',
-                      );
-                    }),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _detailLine(String icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 11),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 26,
-            child: Text(icon, style: const TextStyle(fontSize: 15)),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sheetButton(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFD36E).withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: const Color(0xFFFFD36E).withValues(alpha: 0.45),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: const Color(0xFFFFD36E), size: 18),
-            const SizedBox(width: 7),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFFFFD36E),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _badge(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.45)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-

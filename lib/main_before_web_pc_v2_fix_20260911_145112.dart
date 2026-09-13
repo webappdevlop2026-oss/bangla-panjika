@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data' show Uint8List;
@@ -3502,7 +3502,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       borderRadius: BorderRadius.circular(18),
       onTap: onTap,
       child: Container(
-        constraints: const BoxConstraints(minHeight: 92),
+        minHeight: 92,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: const Color(0xFF0A1A34).withValues(alpha: 0.72),
@@ -12184,11 +12184,8 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
     String festival = '';
     try {
       final events = BengaliCalendarData.eventsFor(now);
-      final festivalEvents = events
-          .where((e) => e.category == 'general')
-          .toList();
-      if (festivalEvents.isNotEmpty) {
-        festival = festivalEvents.take(2).map((e) => e.label).join(' • ');
+      if (events.isNotEmpty) {
+        festival = events.take(2).map((e) => e.label).join(' • ');
       }
     } catch (_) {}
 
@@ -15416,10 +15413,6 @@ class TodaySmartScreen extends StatelessWidget {
     );
     final (tithiStart, tithiEnd) = PanchangCalculator.tithiTiming(sun.sunrise);
     final events = BengaliCalendarData.eventsFor(now);
-    // আজ যাঁদের জন্ম বা প্রয়াণ দিন — আলাদা পর্দায় না গিয়েও এক নজরে দেখা যাবে
-    final anniversaries = _historicalFigures
-        .where((f) => f.month == now.month && f.day == now.day)
-        .toList();
 
     final timeline = <_PanchangTimelineItem>[
       _PanchangTimelineItem(sun.sunrise, '🌅', 'সূর্যোদয়'),
@@ -15668,120 +15661,6 @@ class TodaySmartScreen extends StatelessWidget {
                               )
                               .toList(),
                         ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _glass(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              '🕯️ আজ যাঁদের জন্ম ও প্রয়াণ দিন',
-                              style: TextStyle(
-                                color: Color(0xFFFFD36E),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const TodayHistoryScreen(),
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF9DD6FF),
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 0),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
-                              'সব দেখুন',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 9),
-                      if (anniversaries.isEmpty)
-                        const Text(
-                          'আজ তালিকায় কোনো মনীষীর জন্ম বা প্রয়াণ দিন নেই।',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        )
-                      else
-                        ...anniversaries.map((f) {
-                          final isBirth = f.eventType.contains('জন্ম');
-                          final tone = isBirth
-                              ? const Color(0xFF7BE3AE)
-                              : const Color(0xFFFFB27A);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 9),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  f.emoji,
-                                  style: const TextStyle(fontSize: 17),
-                                ),
-                                const SizedBox(width: 9),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        f.name,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      Text(
-                                        f.role,
-                                        style: const TextStyle(
-                                          color: Colors.white60,
-                                          fontSize: 10.5,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: tone.withValues(alpha: 0.16),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: tone.withValues(alpha: 0.35),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    f.eventType,
-                                    style: TextStyle(
-                                      color: tone,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
                     ],
                   ),
                 ),
@@ -24904,7 +24783,7 @@ class _Super30HomeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'পঞ্জিকা জ্ঞানকোষ',
+                    'SUPER 30 • Bengali Life Intelligence',
                     style: TextStyle(
                       color: Color(0xFFFFD36E),
                       fontSize: 14,
@@ -24995,7 +24874,7 @@ class Super30FeaturesScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '💎 পঞ্জিকা জ্ঞানকোষ'),
+          const _ScreenHeader(title: '💎 SUPER 30 Features'),
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
@@ -41985,4 +41864,3 @@ class _HolidayScreenState extends State<HolidayScreen> {
     );
   }
 }
-

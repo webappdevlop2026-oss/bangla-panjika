@@ -1,0 +1,147 @@
+name: bangla_panjika_native
+description: "A new Flutter project."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+
+  # ডেটা সংরক্ষণ — রিমাইন্ডার, নোটস, সেটিংস, প্রোফাইল, জেলা
+  shared_preferences: ^2.3.3
+
+  # রিমাইন্ডারের জন্য সত্যিকারের নোটিফিকেশন
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+
+  # লাইভ আবহাওয়া (বৃষ্টি হচ্ছে কিনা) — Open-Meteo, ফ্রি, কোনো key লাগে না
+  http: ^1.2.0
+
+  # ফোনের/ব্রাউজারের real-time GPS লোকেশন ধরে সূর্যোদয়/অস্ত ও আবহাওয়া
+  # হিসেব করার জন্য — অনুমতি না দিলে বা না পাওয়া গেলে চুপচাপ আগের মতো
+  # ম্যানুয়ালি বেছে নেওয়া জেলাতেই ফিরে যায়
+  geolocator: ^13.0.2
+
+  # প্রিমিয়াম সাবস্ক্রিপশনের পেমেন্টের জন্য — শুধু Android/iOS এ কাজ করে,
+  # ওয়েবে প্রিমিয়াম কেনার অপশন লুকানো থাকবে
+  razorpay_flutter: ^1.3.7
+
+  # পঞ্জিকা/রাশিফল WhatsApp ইত্যাদিতে শেয়ার করার জন্য
+  share_plus: ^10.1.3
+
+  # আজকের পঞ্চাঙ্গ বাংলায় পড়ে শোনানোর জন্য (text-to-speech)
+  flutter_tts: ^4.2.0
+
+  # মাসিক পঞ্জিকা PDF আকারে এক্সপোর্ট/প্রিন্ট করার জন্য
+  pdf: ^3.11.1
+  printing: ^5.13.4
+
+  # WhatsApp/ফোন কল খোলার জন্য (জ্যোতিষী বুকিং, ইত্যাদি)
+  url_launcher: ^6.3.1
+
+  # বিজ্ঞাপন (Google-এর অফিসিয়াল টেস্ট ID দিয়ে সেট করা — নিজের AdMob
+  # একাউন্ট হলে বদলে দিতে হবে, README-তে বিস্তারিত আছে)। নতুন Gradle
+  # ভার্সনের সাথে ৫.x এর build.gradle এ কনফ্লিক্ট হয় বলে ৯.x ব্যবহার হচ্ছে
+  google_mobile_ads: ^9.1.0
+
+  # হোম স্ক্রিন উইজেট (Android লঞ্চারে আজকের বাংলা তারিখ/তিথি দেখানোর জন্য)
+  home_widget: ^0.7.0
+
+  # ভয়েস রিমাইন্ডার — কথা বলে রিমাইন্ডার তৈরি করার জন্য (speech-to-text,
+  # ফোনের নিজস্ব স্পিচ-রিকগনিশন ব্যবহার করে, কোনো ব্যাকএন্ড/API লাগে না)
+  # (৬.৬.২ ভার্সনে পুরনো jcenter()-নির্ভর build.gradle ছিল, যেটা এই প্রজেক্টের
+  # নতুন Android Gradle Plugin-এর সাথে বিল্ড ফেইল করছিল — তাই নতুন ভার্সন)
+  speech_to_text: ^7.4.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  # মাসিক পঞ্জিকা PDF এক্সপোর্টে বাংলা লেখা ঠিকভাবে দেখানোর জন্য —
+  # Noto Sans Bengali ফন্ট (এটা ছাড়া PDF-এ বাংলা লেখা বাক্স/টোফু হয়ে যেত)
+  assets:
+    - assets/fonts/NotoSansBengali-Regular.ttf
+    - assets/fonts/NotoSansBengali-Bold.ttf
+
+  # একই ফন্টটা এখন পুরো অ্যাপের UI-তেও ব্যবহার হচ্ছে (readability আপডেট) —
+  # ফোনের ব্র্যান্ড/মডেলভেদে ডিফল্ট বাংলা ফন্ট আলাদা আলাদা দেখায় (কোথাও
+  # পাতলা/অস্পষ্ট), Noto Sans Bengali ব্যবহার করলে সব ফোনে একই রকম
+  # পরিষ্কার, মোটা ও সহজপাঠ্য বাংলা লেখা দেখাবে
+  fonts:
+    - family: NotoSansBengali
+      fonts:
+        - asset: assets/fonts/NotoSansBengali-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansBengali-Bold.ttf
+          weight: 700
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package
