@@ -1,10 +1,10 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data' show Uint8List;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart'
@@ -14,6 +14,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:in_app_review/in_app_review.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -31,11 +32,29 @@ final RouteObserver<ModalRoute<void>> routeObserver =
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // প্রথম ফ্রেম আঁকার আগে শুধু যা না থাকলে UI-ই তৈরি হয় না — সেটুকুই।
+  // আগে এখানে নোটিফিকেশন ইঞ্জিন চালু করা, ৩০ দিনের প্রদীপ-রিমাইন্ডার
+  // শিডিউল করা (৩১টা প্ল্যাটফর্ম কল!) আর হোম-উইজেট আপডেট — সবই
+  // await করা হতো। তাতে অ্যাপ খোলার পর সাদা পর্দা অনেকক্ষণ থাকত, আর
+  // ধীর ফোনে ANR পর্যন্ত হতে পারত। Play Console-এর Android vitals-এ
+  // "excessive cold startup time" ও ANR — দুটোই সার্চ র‍্যাঙ্কিং কমায়।
   await AppSettings.instance.load();
   await Phase14Prefs.load();
-  await NotificationService.instance.init();
-  await HomeWidgetService.updateWidget();
   runApp(const BanglaPanjikaApp());
+
+  // বাকিটা প্রথম ফ্রেম আঁকা হয়ে যাওয়ার পর — ব্যবহারকারী তখন অ্যাপ
+  // দেখতে পাচ্ছেন, এগুলো পেছনে চুপচাপ হয়ে যায়।
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    try {
+      await NotificationService.instance.init();
+      await AppSettings.instance.refreshEveningLampSchedule();
+      await HomeWidgetService.updateWidget();
+      await AppRating.instance.registerOpen();
+    } catch (_) {
+      // কোনো একটা ধাপ আটকে গেলেও অ্যাপ চলতে থাকবে
+    }
+  });
 }
 
 // =====================================================================
@@ -48,6 +67,100 @@ Future<void> main() async {
 double _tsFactor(BuildContext context) {
   final f = MediaQuery.of(context).textScaler.scale(100) / 100;
   return f.clamp(1.0, 1.5);
+}
+
+/// Play Store-এর রেটিং শিট কখন দেখানো হবে, তার হিসেব রাখে।
+///
+/// কেন দরকার — Play-এর সার্চ র‍্যাঙ্কিংয়ে রেটিংয়ের **সংখ্যা** ও **কত
+/// সাম্প্রতিক** সেটা সবচেয়ে ভারী উপাদানগুলোর একটা। কিন্তু সবচেয়ে বেশি
+/// ইনস্টল-হারানো ভুল হলো অ্যাপ খোলার সাথে সাথেই রেটিং চাওয়া — লোকে
+/// বিরক্ত হয়ে ১ তারা দেন বা আনইনস্টল করেন। তাই এখানে কড়া নিয়ম:
+///
+///   • অন্তত ৫ বার অ্যাপ খুলতে হবে
+///   • প্রথম খোলার পর অন্তত ৩ দিন যেতে হবে
+///   • একবার দেখানোর পর ৯০ দিন আর দেখাবে না
+///   • ব্যবহারকারী রেটিং দিয়ে দিলে আর কখনো দেখাবে না
+///
+/// Play-এর নিজের শিটটাই দেখানো হয় (অ্যাপ থেকে বেরোতে হয় না), আর
+/// Google নিজেই ঠিক করে শিটটা আদৌ দেখাবে কি না — তাই দুবার চাপলেও
+/// ব্যবহারকারীর কিছু হবে না।
+class AppRating {
+  AppRating._();
+  static final AppRating instance = AppRating._();
+
+  static const _kOpens = 'rating_open_count';
+  static const _kFirstOpen = 'rating_first_open_ts';
+  static const _kAsked = 'rating_last_asked_ts';
+  static const _kDone = 'rating_done';
+
+  static const int _minOpens = 5;
+  static const int _minDaysSinceFirstOpen = 3;
+  static const int _cooldownDays = 90;
+
+  /// অ্যাপ খোলার হিসেব — প্রতিবার চালু হলে একবার ডাকা হয়
+  Future<void> registerOpen() async {
+    if (kIsWeb) return;
+    try {
+      final p = await SharedPreferences.getInstance();
+      final n = (p.getInt(_kOpens) ?? 0) + 1;
+      await p.setInt(_kOpens, n);
+      if (p.getInt(_kFirstOpen) == null) {
+        await p.setInt(_kFirstOpen, DateTime.now().millisecondsSinceEpoch);
+      }
+    } catch (_) {}
+  }
+
+  /// শর্তগুলো মিললে Play-এর রেটিং শিট দেখায়। শর্ত না মিললে চুপচাপ
+  /// কিছুই করে না — তাই যেকোনো জায়গা থেকে নির্ভয়ে ডাকা যায়।
+  Future<void> maybeAsk() async {
+    if (kIsWeb) return;
+    try {
+      final p = await SharedPreferences.getInstance();
+      if (p.getBool(_kDone) ?? false) return;
+
+      if ((p.getInt(_kOpens) ?? 0) < _minOpens) return;
+
+      final firstMs = p.getInt(_kFirstOpen);
+      if (firstMs == null) return;
+      final daysSinceFirst = DateTime.now()
+          .difference(DateTime.fromMillisecondsSinceEpoch(firstMs))
+          .inDays;
+      if (daysSinceFirst < _minDaysSinceFirstOpen) return;
+
+      final askedMs = p.getInt(_kAsked);
+      if (askedMs != null) {
+        final since = DateTime.now()
+            .difference(DateTime.fromMillisecondsSinceEpoch(askedMs))
+            .inDays;
+        if (since < _cooldownDays) return;
+      }
+
+      final review = InAppReview.instance;
+      if (!await review.isAvailable()) return;
+      await p.setInt(_kAsked, DateTime.now().millisecondsSinceEpoch);
+      await review.requestReview();
+    } catch (_) {
+      // Play Services না থাকলে/পুরনো ফোনে চুপচাপ বাদ
+    }
+  }
+
+  /// সেটিংস থেকে ব্যবহারকারী নিজে চাপলে — এখানে সরাসরি Play Store-এর
+  /// পাতা খোলা হয়, আর ভবিষ্যতে আর নিজে থেকে রেটিং চাওয়া হয় না
+  Future<void> openStoreListing() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(_kDone, true);
+      await InAppReview.instance.openStoreListing();
+    } catch (_) {
+      await launchUrl(
+        Uri.parse(
+          'https://play.google.com/store/apps/details'
+          '?id=com.shripanchang.calendar',
+        ),
+        mode: LaunchMode.externalApplication,
+      );
+    }
+  }
 }
 
 class AppSettings extends ChangeNotifier {
@@ -138,7 +251,14 @@ class AppSettings extends ChangeNotifier {
   /// "প্রিমিয়াম-এক্সক্লুসিভ" ফিচারগুলো (কুষ্ঠি চার্ট, PDF এক্সপোর্ট,
   /// ক্লাউড ব্যাকআপ, জ্যোতিষী বুকিং) খোলা রাখার একমাত্র শর্ত — হয় ফ্রি
   /// ট্রায়াল এখনো চলছে, নয়তো আসল প্রিমিয়াম সাবস্ক্রিপশন সক্রিয়
-  bool get hasPremiumAccess => isPremiumActive || inTrialPeriod;
+  /// ক্লায়েন্টের সিদ্ধান্ত — প্রথম ৬ মাস অ্যাপে কোনো প্রিমিয়াম থাকবে
+  /// না, সব সুবিধা সবার জন্য খোলা। ৬ মাস পরে প্রিমিয়াম চালু করতে শুধু
+  /// এটাকে false করে দিলেই আগের ব্যবস্থা হুবহু ফিরে আসবে — পেমেন্ট,
+  /// ট্রায়াল, সব কোড অক্ষত আছে, আর কোথাও কিছু বদলাতে হবে না।
+  static const bool freeForEveryone = true;
+
+  bool get hasPremiumAccess =>
+      freeForEveryone || isPremiumActive || inTrialPeriod;
 
   /// সেভ করা জেলা (প্রথমবার চালু করলে কলকাতা)
   String get district => AppLocation.district;
@@ -182,12 +302,17 @@ class AppSettings extends ChangeNotifier {
     final d = p.getString(_kDistrict);
     if (d != null) AppLocation.district = d;
     notifyListeners();
-    // আগে থেকে অন করা থাকলে অ্যাপ চালু হওয়ার সাথে সাথেই আগামী কিছুদিনের
-    // সন্ধ্যা প্রদীপ নোটিফিকেশন (real সূর্যাস্ত সময় দিয়ে) নতুন করে সেট
-    // করা হয়, যাতে তালিকা কখনো শেষ/পুরনো হয়ে না যায়
-    if (eveningLampReminder && notifications) {
-      await NotificationService.instance.scheduleEveningLampReminders();
-    }
+  }
+
+  /// সন্ধ্যা প্রদীপের আগামী ৩০ দিনের রিমাইন্ডার নতুন করে বসায়, যাতে
+  /// তালিকা কখনো শেষ/পুরনো হয়ে না যায়।
+  ///
+  /// আগে এটা [load]-এর ভেতরেই ছিল, আর [load] ডাকা হতো `runApp()`-এর
+  /// আগে — ফলে ৩১টা প্ল্যাটফর্ম কল শেষ না হওয়া পর্যন্ত অ্যাপের প্রথম
+  /// পর্দাই আসত না। এখন এটা প্রথম ফ্রেমের পরে আলাদা করে ডাকা হয়।
+  Future<void> refreshEveningLampSchedule() async {
+    if (!eveningLampReminder || !notifications) return;
+    await NotificationService.instance.scheduleEveningLampReminders();
   }
 
   /// টাইমস্ট্যাম্প + র‍্যান্ডম সংখ্যা মিশিয়ে একটা মোটামুটি-ইউনিক আইডি
@@ -544,6 +669,24 @@ class TempleStore {
 }
 
 /// সত্যিকারের লোকাল নোটিফিকেশন — নির্ধারিত সময়ে ফোনে অ্যালার্ট আসবে
+/// পঞ্চাঙ্গ ইঞ্জিনের সূর্যোদয়/সূর্যাস্তের DateTime-গুলোকে **প্রকৃত**
+/// স্থানীয় মুহূর্তে বদলে দেয়।
+///
+/// কেন দরকার — `PanchangCalculator._jdToLocalDateTime()` UTC সময়ের সাথে
+/// ৫ ঘণ্টা ৩০ মিনিট যোগ করে, কিন্তু `isUtc` পতাকাটা সত্যি রেখেই দেয়।
+/// ফলে ওই DateTime-এর ঘড়ির অঙ্ক (hour/minute) IST-তে ঠিকই থাকে — পর্দায়
+/// তাই কোনো ভুল চোখে পড়ে না — কিন্তু ভেতরে ওর প্রকৃত মুহূর্তটা আসল
+/// সময়ের চেয়ে ৫:৩০ এগিয়ে থাকে।
+///
+/// নোটিফিকেশন শিডিউল করতে ঘড়ির অঙ্ক নয়, **প্রকৃত মুহূর্ত** লাগে। তাই
+/// এই রূপান্তর ছাড়া সূর্যাস্ত ৫:৪৮-এর "সন্ধ্যা প্রদীপ" রিমাইন্ডার রাত
+/// ১১:১৮-তে বাজত (৫:৪৮ + ৫:৩০)। ঠিক এই বাগটাই লাইভ অ্যাপে ধরা পড়েছিল।
+///
+/// এখানে ঘড়ির অঙ্কগুলো নিয়ে নতুন করে একটা স্থানীয় DateTime বানানো হয়,
+/// তাই ফোনের নিজের টাইমজোন অনুযায়ী মুহূর্তটা ঠিক জায়গায় বসে।
+DateTime panchangInstant(DateTime t) =>
+    DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
+
 class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
@@ -641,11 +784,15 @@ class NotificationService {
       final day = today.add(Duration(days: i));
       DateTime sunset;
       try {
-        sunset = PanchangCalculator.sunTimes(
-          day,
-          lat: AppLocation.lat,
-          lon: AppLocation.lon,
-        ).sunset;
+        // panchangInstant() ছাড়া এটা ৫:৩০ এগিয়ে যেত — নিচের
+        // zonedSchedule ঘড়ির অঙ্ক নয়, প্রকৃত মুহূর্ত ধরে কাজ করে
+        sunset = panchangInstant(
+          PanchangCalculator.sunTimes(
+            day,
+            lat: AppLocation.lat,
+            lon: AppLocation.lon,
+          ).sunset,
+        );
       } catch (_) {
         continue;
       }
@@ -793,12 +940,28 @@ class AdService {
   static final AdService instance = AdService._();
   bool _initialized = false;
 
-  // এগুলো Google-এর অফিসিয়াল টেস্ট Ad Unit ID — সবসময় নিরাপদে টেস্ট
-  // বিজ্ঞাপন দেখাবে, কোনো টাকা তৈরি করে না। নিজের AdMob একাউন্ট থেকে আসল
-  // ID বসালে তখন থেকে আসল বিজ্ঞাপন ও আসল আয় শুরু হবে (README.md দেখুন)
-  static const String bannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
-  static const String interstitialAdUnitId =
+  // এগুলো Google-এর অফিসিয়াল টেস্ট Ad Unit ID — কোনো আয় হয় না।
+  //
+  // ⚠️ টেস্ট ID বসানো থাকা অবস্থায় অ্যাপে কোনো বিজ্ঞাপনই দেখানো হয় না
+  // (নিচের [realAdsConfigured] দেখুন)। কারণ পাবলিশ করা অ্যাপে টেস্ট
+  // বিজ্ঞাপন দেখালে ব্যবহারকারীর কাছে খারাপ দেখায় আর আয়ও হয় না —
+  // তার চেয়ে জায়গাটা পরিষ্কার রাখা ভালো।
+  //
+  // ক্লায়েন্টের AdMob অ্যাকাউন্ট থেকে আসল দুটো ID এনে নিচের দুই লাইনে
+  // বসিয়ে দিলেই বিজ্ঞাপন নিজে থেকে চালু হয়ে যাবে — আর কোথাও কিছু
+  // বদলাতে হবে না। সেই সঙ্গে AndroidManifest.xml-এর
+  // com.google.android.gms.ads.APPLICATION_ID-ও আসলটা বসাতে হবে।
+  static const String _googleTestBanner =
+      'ca-app-pub-3940256099942544/6300978111';
+  static const String _googleTestInterstitial =
       'ca-app-pub-3940256099942544/1033173712';
+
+  static const String bannerAdUnitId = _googleTestBanner;
+  static const String interstitialAdUnitId = _googleTestInterstitial;
+
+  /// আসল (টেস্ট নয়) AdMob ID বসানো হয়েছে কিনা
+  static bool get realAdsConfigured =>
+      bannerAdUnitId.isNotEmpty && bannerAdUnitId != _googleTestBanner;
 
   Future<void> init() async {
     if (_initialized || kIsWeb) return;
@@ -810,8 +973,10 @@ class AdService {
     }
   }
 
-  /// প্রিমিয়াম ইউজার বা ওয়েবে বিজ্ঞাপন দেখানো হয় না
-  bool get shouldShowAds => !kIsWeb && !AppSettings.instance.isPremium;
+  /// প্রিমিয়াম ইউজার, ওয়েব, বা আসল AdMob ID না বসানো থাকলে বিজ্ঞাপন
+  /// দেখানো হয় না
+  bool get shouldShowAds =>
+      !kIsWeb && realAdsConfigured && !AppSettings.instance.isPremium;
 }
 
 /// হোম স্ক্রিনে দেখানোর জন্য ব্যানার বিজ্ঞাপন — লোড না হলে বা প্রিমিয়াম
@@ -886,6 +1051,12 @@ class BackendConfig {
 
   static String get baseUrl {
     if (hosted.isNotEmpty) return hosted;
+    // ⚠️ রিলিজ বিল্ডে (পাবলিশ করা অ্যাপে) নিচের লোকাল IP একেবারেই কাজে
+    // আসে না — ওটা ডেভেলপারের পিসির ঠিকানা। সেখানে কল করতে গেলে
+    // ব্যবহারকারী শুধু দীর্ঘ অপেক্ষা আর অদ্ভুত নেটওয়ার্ক এরর দেখত।
+    // তাই হোস্টিং সেট না থাকলে রিলিজে খালি ফেরত যায়, আর যে ফিচারগুলো
+    // backend চায় সেগুলো স্পষ্ট বার্তা দেখায়।
+    if (kReleaseMode) return '';
     // হোস্টিং এখনো নেই — টেস্টিংয়ের জন্য পিসিতে চলা লোকাল Laravel সার্ভার
     // ব্যবহার হচ্ছে। ওয়েবে (একই পিসির ব্রাউজারে) 127.0.0.1 কাজ করবে, কিন্তু
     // ফোনে টেস্ট করতে হলে ফোন ও পিসি একই WiFi-তে থাকতে হবে এবং এখানে
@@ -903,10 +1074,51 @@ class BackendConfig {
 /// থাকা অবস্থায় এই অংশটা চুপচাপ লুকানো থাকে (ভাঙা/placeholder লিংক
 /// দেখায় না)।
 class AppLinks {
-  // ⚠️ পাবলিশ হওয়ার পর এখানে বসান, যেমন:
-  // 'https://play.google.com/store/apps/details?id=com.example.bangla_panjika_native'
-  static const String playStore = '';
+  /// Play Store-এ অ্যাপের পাতা। অ্যাপের ভেতর থেকে যা কিছু শেয়ার করা
+  /// হয়, তার শেষে এই লিংকটা জুড়ে যায় — তাই যিনি পান, তিনি এক ট্যাপেই
+  /// অ্যাপটা পেয়ে যান।
+  static const String playStore =
+      'https://play.google.com/store/apps/details'
+      '?id=com.shripanchang.calendar'
+      // Play Console → Acquisition reports-এ আলাদা করে দেখা যাবে
+      // অ্যাপের ভেতরের শেয়ার থেকে কত ইনস্টল হয়েছে। Google নিজে যে
+      // `pcampaignid=web_share` জোড়ে সেটা ইচ্ছে করেই বসানো হয়নি —
+      // ওটা থাকলে সব ইনস্টল "ওয়েব শেয়ার" বলে গোনা হতো।
+      '&referrer=utm_source%3Dapp%26utm_medium%3Dshare'
+      '%26utm_campaign%3Din_app_share';
+
+  /// শেয়ারের লেখার শেষে অ্যাপের নাম ও ইনস্টল-লিংক জুড়ে দেয়।
+  ///
+  /// কেন দরকার — লোকে পঞ্জিকার তথ্য WhatsApp-এ পাঠান, কিন্তু সেটা কোন
+  /// অ্যাপ থেকে এল তা বোঝার উপায় থাকে না। লিংকটা সঙ্গে গেলে প্রতিটা
+  /// শেয়ারই একটা করে নতুন ইনস্টলের সুযোগ। Play Store-এর সার্চ
+  /// র‍্যাঙ্কিংয়েও ইনস্টলের সংখ্যা সবচেয়ে ভারী উপাদানগুলোর একটা।
+  static String withAppLink(String text) {
+    if (playStore.isEmpty) return text;
+    // আগে থেকেই লিংক বসানো থাকলে দুবার বসবে না
+    if (text.contains('play.google.com')) return text;
+    var t = text.trimRight();
+    // কোনো লেখার শেষে আগে থেকেই শুধু অ্যাপের নাম থাকলে সেটা বাদ দিয়ে
+    // নিচে একবারই পুরো ফুটার বসানো হয়
+    for (final tail in const [
+      '— বাংলা পঞ্জিকা',
+      '📲 বাংলা পঞ্জিকা অ্যাপ থেকে',
+      'বাংলা পঞ্জিকা',
+    ]) {
+      if (t.endsWith(tail)) {
+        t = t.substring(0, t.length - tail.length).trimRight();
+        break;
+      }
+    }
+    return '$t\n\n📅 বাংলা পঞ্জিকা — ShriPanchang\n📲 $playStore';
+  }
 }
+
+/// অ্যাপের ভেতরের **সব** শেয়ার এই একটাই দরজা দিয়ে যায়, যাতে কোনো
+/// জায়গায় ইনস্টল-লিংক বসাতে ভুল না হয়। নতুন কোথাও শেয়ার যোগ করলে
+/// `Share.share` নয়, এটাই ব্যবহার করবেন।
+Future<void> shareFromApp(String text, {String? subject}) =>
+    Share.share(AppLinks.withAppLink(text), subject: subject);
 
 /// ক্লাউড ব্যাকআপ — রিমাইন্ডার ও নোটস নিজস্ব Laravel + MySQL backend-এ
 /// সেভ রাখে (কোনো Firebase/থার্ড-পার্টি একাউন্ট লাগে না, backend চালু
@@ -917,6 +1129,10 @@ class CloudBackupService {
 
   /// null মানে সফল হয়েছে, নাহলে দেখানোর জন্য এরর মেসেজ ফেরত দেয়
   Future<String?> backupNow() async {
+    if (BackendConfig.baseUrl.isEmpty) {
+      return 'ক্লাউড ব্যাকআপের সার্ভার এখনো যুক্ত হয়নি — আপডেটে আসছে। '
+          'ততক্ষণ আপনার সব তথ্য এই ফোনেই নিরাপদে সেভ থাকছে।';
+    }
     try {
       final deviceId = AppSettings.instance.deviceId;
       final res = await http
@@ -2555,7 +2771,15 @@ class LanguageScreen extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
           ),
         ),
-        onPressed: () => Navigator.pushNamed(context, '/onboarding'),
+        onPressed: () async {
+          // আগে দুটো বোতামই শুধু পরের স্ক্রিনে নিয়ে যেত, ভাষাটা কোথাও
+          // সেভ হতো না — তাই "English" বাছলেও অ্যাপে কিছু বদলাত না।
+          // এখন পছন্দটা সেভ হয়, ফলে গোটা অ্যাপের সংখ্যা, মাসের নাম ও
+          // বারের নাম বাছাই করা ভাষাতেই দেখায়।
+          await AppSettings.instance.save(lang: title);
+          if (!context.mounted) return;
+          Navigator.pushNamed(context, '/onboarding');
+        },
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -3027,14 +3251,81 @@ class HomeDashboardScreen extends StatefulWidget {
   State<HomeDashboardScreen> createState() => _HomeDashboardScreenState();
 }
 
-class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+class _HomeDashboardScreenState extends State<HomeDashboardScreen>
+    with WidgetsBindingObserver {
   int _navIndex = 0;
   bool _menuOpen = false;
+
+  /// এখন পর্দায় কোন তারিখ ধরে সব দেখানো হচ্ছে।
+  ///
+  /// আগে অ্যাপে এমন কিছুই ছিল না — ফলে দুটো বাস্তব সমস্যা হতো:
+  ///
+  ///  ১. অ্যাপ খোলা রেখে ফোন নামিয়ে রাখলে, রাত ১২টা পার হয়ে গেলেও
+  ///     হোম স্ক্রিনে **গতকালের** তারিখ, তিথি ও উৎসবই দেখাত।
+  ///  ২. অ্যাপ পেছনে রেখে পরদিন সকালে ফিরে এলে একই ব্যাপার — সব
+  ///     তথ্য বাসি, অথচ দেখে বোঝার উপায় নেই।
+  ///
+  /// এখন প্রতি মিনিটে ফোনের আসল তারিখ মিলিয়ে দেখা হয়, আর অ্যাপ
+  /// পেছন থেকে ফিরলেও সঙ্গে সঙ্গে মিলিয়ে নেওয়া হয়।
+  late DateTime _shownDay;
+  Timer? _dayWatch;
+  Timer? _ratingTimer;
+
+  static DateTime _todayOnly() {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
 
   @override
   void initState() {
     super.initState();
+    _shownDay = _todayOnly();
+    WidgetsBinding.instance.addObserver(this);
     HomeWidgetService.updateWidget();
+    // প্রতি মিনিটে শুধু তারিখটা মিলিয়ে দেখা — বদলালেই নতুন করে আঁকা।
+    // মিনিটে একবার, আর তারিখ না বদলালে setState-ও হয় না, তাই ব্যাটারিতে
+    // কোনো প্রভাব নেই।
+    _dayWatch = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _syncWithRealTime(),
+    );
+    // অ্যাপ খোলার সাথে সাথে নয় — ১২ সেকেন্ড পর, যখন ব্যবহারকারী
+    // সত্যিই কিছু দেখেছেন। শর্ত না মিললে AppRating নিজেই কিছু করবে না।
+    _ratingTimer = Timer(const Duration(seconds: 12), () {
+      if (mounted) AppRating.instance.maybeAsk();
+    });
+  }
+
+  @override
+  void dispose() {
+    _dayWatch?.cancel();
+    _ratingTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// ফোনের আসল সময়ের সাথে পর্দাকে মিলিয়ে নেয়। তারিখ বদলে গিয়ে থাকলে
+  /// (রাত ১২টা পার, কিংবা ব্যবহারকারী ফোনের তারিখ/সময়-অঞ্চল বদলেছেন)
+  /// হোম স্ক্রিন ও লঞ্চারের উইজেট — দুটোই নতুন করে আঁকা হয়।
+  void _syncWithRealTime() {
+    final today = _todayOnly();
+    if (today == _shownDay) return;
+    _shownDay = today;
+    if (mounted) setState(() {});
+    HomeWidgetService.updateWidget();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    // পেছন থেকে ফেরার সাথে সাথেই — তারিখ বদলে থাকলে নতুন দিন, আর
+    // না বদলালেও সূর্যোদয়/তিথি/সময়ের হিসেব একবার তাজা করে নেওয়া হয়।
+    _syncWithRealTime();
+    if (mounted) setState(() {});
+    HomeWidgetService.updateWidget();
+    // ফোন অনেকদিন বন্ধ থাকলে ৩০ দিনের প্রদীপ-রিমাইন্ডারের তালিকা
+    // ফুরিয়ে যেতে পারে — ফেরার সময় সেটাও নতুন করে বসানো হয়।
+    AppSettings.instance.refreshEveningLampSchedule();
   }
 
   void _handleOpen(BuildContext context, String title) {
@@ -3139,7 +3430,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           ),
         );
         break;
-      case 'প্রিমিয়াম':
+      case 'বিশেষ সংগ্রহ':
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const PremiumScreen()),
@@ -3311,7 +3602,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final bengali = BengaliDateUtil.monthInfoFor(now);
     final bengaliDay = now.difference(bengali.start).inDays + 1;
     return Container(
-      height: 82,
+      height: 82 * _tsFactor(context),
       padding: const EdgeInsets.symmetric(horizontal: 26),
       decoration: BoxDecoration(
         color: const Color(0xFF061327).withValues(alpha: 0.78),
@@ -3565,13 +3856,24 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         const _HistoryBanner(),
         const SizedBox(height: 14),
         _TickerBar(),
-        const SizedBox(height: 14),
+        const SizedBox(height: 18),
+        const _SectionTitle('পরবর্তী উৎসব ও প্রস্তুতি'),
+        const SizedBox(height: 10),
+        const _Phase5FestivalPulseCard(),
+        const SizedBox(height: 18),
         const _HomeLiveTimingSystem(),
         const SizedBox(height: 14),
         const _Phase14DynamicHomeCard(),
         const SizedBox(height: 14),
         const Phase15AmbientSolarStrip(),
         const SizedBox(height: 18),
+        const _SectionTitle('জীবন্ত বাংলা গ্রাম • সরাসরি'),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: const VillageHorizonScene(height: 300),
+        ),
+        const SizedBox(height: 20),
         const _SectionTitle('আজকের পঞ্চাঙ্গ'),
         const SizedBox(height: 10),
         _desktopPanchangRow(),
@@ -3591,18 +3893,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         const SizedBox(height: 14),
         const _Phase18HomeCard(),
         const SizedBox(height: 14),
+        const _RashifalHomeCard(),
+        const SizedBox(height: 14),
         const _AllServicesHomeButton(),
-        const SizedBox(height: 20),
-        const _SectionTitle('পরবর্তী উৎসব ও প্রস্তুতি'),
-        const SizedBox(height: 10),
-        const _Phase5FestivalPulseCard(),
-        const SizedBox(height: 20),
-        const _SectionTitle('জীবন্ত বাংলা গ্রাম • LIVE'),
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: const VillageHorizonScene(height: 300),
-        ),
         const SizedBox(height: 14),
         const AdBannerWidget(),
       ],
@@ -3693,7 +3986,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       color: Color(0xFFFFD479),
                     ),
                   ),
-                  _iconButton(Icons.notifications_none_rounded, () {}),
+                  _iconButton(
+                    Icons.notifications_none_rounded,
+                    // আগে এই বোতামটা কিছুই করত না — এখন রিমাইন্ডারের
+                    // পাতায় নিয়ে যায়, সাইড মেনুর মতোই
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReminderScreen()),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -3702,13 +4003,29 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const _HistoryBanner(),
               const SizedBox(height: 12),
               _TickerBar(),
-              const SizedBox(height: 12),
+              const SizedBox(height: 18),
+              // আসন্ন উৎসব — পঞ্জিকা খোলার সবচেয়ে বড় কারণই "সামনে কী
+              // উৎসব", তাই একেবারে উপরে রাখা হলো। আগে নিচে পড়ে থাকত।
+              const _SectionTitle('পরবর্তী উৎসব ও প্রস্তুতি'),
+              const SizedBox(height: 10),
+              const _Phase5FestivalPulseCard(),
+              const SizedBox(height: 18),
               const _HomeLiveTimingSystem(),
               const SizedBox(height: 12),
               const _Phase14DynamicHomeCard(),
               const SizedBox(height: 12),
               const Phase15AmbientSolarStrip(),
-              const SizedBox(height: 14),
+              const SizedBox(height: 18),
+              // জীবন্ত গ্রাম — আগে একেবারে নিচে ছিল, বেশিরভাগ মানুষ এত
+              // স্ক্রল করতেন না বলে দেখতেই পেতেন না। চলমান দৃশ্যটা
+              // অ্যাপের সবচেয়ে সুন্দর অংশ, তাই উপরে আনা হলো।
+              const _SectionTitle('জীবন্ত বাংলা গ্রাম • সরাসরি'),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: const VillageHorizonScene(),
+              ),
+              const SizedBox(height: 20),
               const _Phase5HomeCommandCenter(),
               const SizedBox(height: 12),
               const _Phase6DailyIntelligenceCard(),
@@ -3716,6 +4033,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const _Super30HomeCard(),
               const SizedBox(height: 12),
               const _Phase18HomeCard(),
+              const SizedBox(height: 12),
+              const _RashifalHomeCard(),
               const SizedBox(height: 12),
               const _AllServicesHomeButton(),
               const SizedBox(height: 20),
@@ -3787,17 +4106,6 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     ],
                   );
                 },
-              ),
-              const SizedBox(height: 20),
-              const _SectionTitle('পরবর্তী উৎসব ও প্রস্তুতি'),
-              const SizedBox(height: 10),
-              const _Phase5FestivalPulseCard(),
-              const SizedBox(height: 20),
-              const _SectionTitle('জীবন্ত বাংলা গ্রাম • LIVE'),
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: const VillageHorizonScene(),
               ),
               const SizedBox(height: 14),
               const AdBannerWidget(),
@@ -3919,6 +4227,657 @@ class _HistoricalFigure {
 }
 
 const List<_HistoricalFigure> _historicalFigures = [
+  // ───────────── জানুয়ারি ─────────────
+  _HistoricalFigure(1, 1, 'পল্লিকবি জসীম উদ্‌দীন', 'কবি', 'জন্ম', '✒️'),
+  _HistoricalFigure(
+    1,
+    3,
+    'সাবিত্রীবাই ফুলে',
+    'শিক্ষাব্রতী ও সমাজ সংস্কারক',
+    'জন্ম',
+    '👩‍🏫',
+  ),
+  _HistoricalFigure(
+    1,
+    3,
+    'সুচিত্রা মিত্র',
+    'রবীন্দ্রসঙ্গীত শিল্পী',
+    'প্রয়াণ',
+    '🎤',
+  ),
+  _HistoricalFigure(1, 4, 'রাহুল দেব বর্মন', 'সুরকার', 'প্রয়াণ', '🎹'),
+  _HistoricalFigure(1, 8, 'আশাপূর্ণা দেবী', 'সাহিত্যিক', 'জন্ম', '📚'),
+  _HistoricalFigure(
+    1,
+    8,
+    'কেশবচন্দ্র সেন',
+    'ব্রাহ্ম সমাজ নেতা',
+    'প্রয়াণ',
+    '🕊️',
+  ),
+  _HistoricalFigure(
+    1,
+    9,
+    'হরগোবিন্দ খোরানা',
+    'নোবেলজয়ী বিজ্ঞানী',
+    'জন্ম',
+    '🧬',
+  ),
+  _HistoricalFigure(1, 15, 'তপন সিংহ', 'চলচ্চিত্র নির্মাতা', 'প্রয়াণ', '🎬'),
+  _HistoricalFigure(1, 17, 'জ্যোতি বসু', 'মুখ্যমন্ত্রী', 'প্রয়াণ', '🏛️'),
+  _HistoricalFigure(1, 19, 'সৌমিত্র চট্টোপাধ্যায়', 'অভিনেতা', 'জন্ম', '🎬'),
+  _HistoricalFigure(
+    1,
+    19,
+    'দেবেন্দ্রনাথ ঠাকুর',
+    'ব্রাহ্ম ধর্মগুরু',
+    'প্রয়াণ',
+    '🕊️',
+  ),
+  _HistoricalFigure(1, 21, 'রাসবিহারী বসু', 'বিপ্লবী', 'প্রয়াণ', '⚔️'),
+  _HistoricalFigure(
+    1,
+    27,
+    'নিখিল বন্দ্যোপাধ্যায়',
+    'সেতার বাদক',
+    'প্রয়াণ',
+    '🎻',
+  ),
+  _HistoricalFigure(
+    1,
+    28,
+    'লালা লাজপত রায়',
+    'স্বাধীনতা সংগ্রামী',
+    'জন্ম',
+    '✊',
+  ),
+
+  // ───────────── ফেব্রুয়ারি ─────────────
+  _HistoricalFigure(2, 5, 'শঙ্খ ঘোষ', 'কবি', 'জন্ম', '✒️'),
+  _HistoricalFigure(
+    2,
+    6,
+    'লতা মঙ্গেশকর',
+    'কিংবদন্তি সঙ্গীতশিল্পী',
+    'প্রয়াণ',
+    '🎤',
+  ),
+  _HistoricalFigure(
+    2,
+    8,
+    'গিরিশচন্দ্র ঘোষ',
+    'নাট্যকার ও অভিনেতা',
+    'প্রয়াণ',
+    '🎭',
+  ),
+  _HistoricalFigure(2, 8, 'কল্পনা দত্ত', 'বিপ্লবী', 'প্রয়াণ', '⚔️'),
+  _HistoricalFigure(2, 11, 'সৈয়দ মুজতবা আলী', 'সাহিত্যিক', 'প্রয়াণ', '📚'),
+  _HistoricalFigure(
+    2,
+    11,
+    'বুদ্ধদেব দাশগুপ্ত',
+    'চলচ্চিত্র নির্মাতা',
+    'জন্ম',
+    '🎬',
+  ),
+  _HistoricalFigure(
+    2,
+    12,
+    'স্বামী দয়ানন্দ সরস্বতী',
+    'আর্য সমাজের প্রতিষ্ঠাতা',
+    'জন্ম',
+    '🕉️',
+  ),
+  _HistoricalFigure(
+    2,
+    14,
+    'গগনেন্দ্রনাথ ঠাকুর',
+    'চিত্রশিল্পী',
+    'প্রয়াণ',
+    '🎨',
+  ),
+  _HistoricalFigure(
+    2,
+    15,
+    'সন্ধ্যা মুখোপাধ্যায়',
+    'সঙ্গীতশিল্পী',
+    'প্রয়াণ',
+    '🎤',
+  ),
+  _HistoricalFigure(2, 19, 'গোপালকৃষ্ণ গোখলে', 'রাজনীতিবিদ', 'প্রয়াণ', '🏛️'),
+  _HistoricalFigure(
+    2,
+    22,
+    'মৌলানা আবুল কালাম আজাদ',
+    'স্বাধীনতা সংগ্রামী ও শিক্ষামন্ত্রী',
+    'প্রয়াণ',
+    '📗',
+  ),
+  _HistoricalFigure(
+    2,
+    26,
+    'বিনায়ক দামোদর সাভারকর',
+    'স্বাধীনতা সংগ্রামী',
+    'প্রয়াণ',
+    '✊',
+  ),
+  _HistoricalFigure(
+    2,
+    28,
+    'গিরিশচন্দ্র ঘোষ',
+    'নাট্যকার ও অভিনেতা',
+    'জন্ম',
+    '🎭',
+  ),
+
+  // ───────────── মার্চ ─────────────
+  _HistoricalFigure(
+    3,
+    4,
+    'ভানু বন্দ্যোপাধ্যায়',
+    'কৌতুক অভিনেতা',
+    'প্রয়াণ',
+    '🎭',
+  ),
+  _HistoricalFigure(3, 11, 'হরিচাঁদ ঠাকুর', 'মতুয়া ধর্মগুরু', 'জন্ম', '🕉️'),
+  _HistoricalFigure(3, 12, 'সমরেশ বসু', 'সাহিত্যিক', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(3, 13, 'পল্লিকবি জসীম উদ্‌দীন', 'কবি', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(3, 13, 'গুরুচাঁদ ঠাকুর', 'সমাজ সংস্কারক', 'জন্ম', '🕉️'),
+  _HistoricalFigure(3, 18, 'বুদ্ধদেব বসু', 'কবি ও সাহিত্যিক', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(3, 18, 'বিমল মিত্র', 'সাহিত্যিক', 'জন্ম', '📚'),
+  _HistoricalFigure(3, 21, 'উস্তাদ বিসমিল্লাহ খাঁ', 'সানাই বাদক', 'জন্ম', '🎺'),
+  _HistoricalFigure(
+    3,
+    23,
+    'শহিদ সুখদেব থাপর',
+    'বিপ্লবী (ফাঁসি)',
+    'প্রয়াণ',
+    '⚔️',
+  ),
+  _HistoricalFigure(
+    3,
+    23,
+    'শহিদ শিবরাম রাজগুরু',
+    'বিপ্লবী (ফাঁসি)',
+    'প্রয়াণ',
+    '⚔️',
+  ),
+  _HistoricalFigure(3, 29, 'উৎপল দত্ত', 'নাট্যকার ও অভিনেতা', 'জন্ম', '🎭'),
+
+  // ───────────── এপ্রিল ─────────────
+  _HistoricalFigure(
+    4,
+    8,
+    'মঙ্গল পাণ্ডে',
+    'সিপাহি বিদ্রোহের নায়ক',
+    'প্রয়াণ',
+    '⚔️',
+  ),
+  _HistoricalFigure(
+    4,
+    8,
+    'গোষ্ঠ পাল',
+    'ফুটবলার (চীনের প্রাচীর)',
+    'প্রয়াণ',
+    '⚽',
+  ),
+  _HistoricalFigure(4, 11, 'যামিনী রায়', 'চিত্রশিল্পী', 'জন্ম', '🎨'),
+  _HistoricalFigure(4, 11, 'জ্যোতিরাও ফুলে', 'সমাজ সংস্কারক', 'জন্ম', '👣'),
+  _HistoricalFigure(4, 14, 'উস্তাদ আলি আকবর খাঁ', 'সরোদ বাদক', 'জন্ম', '🎻'),
+  _HistoricalFigure(4, 16, 'নন্দলাল বসু', 'চিত্রশিল্পী', 'প্রয়াণ', '🎨'),
+  _HistoricalFigure(4, 21, 'শঙ্খ ঘোষ', 'কবি', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(4, 24, 'শচীন তেন্ডুলকর', 'ক্রিকেটার', 'জন্ম', '🏏'),
+  _HistoricalFigure(4, 24, 'যামিনী রায়', 'চিত্রশিল্পী', 'প্রয়াণ', '🎨'),
+  _HistoricalFigure(4, 26, 'শ্রীনিবাস রামানুজন', 'গণিতজ্ঞ', 'প্রয়াণ', '🔢'),
+
+  // ───────────── মে ─────────────
+  _HistoricalFigure(5, 9, 'গোপালকৃষ্ণ গোখলে', 'রাজনীতিবিদ', 'জন্ম', '🏛️'),
+  _HistoricalFigure(
+    5,
+    12,
+    'উপেন্দ্রকিশোর রায়চৌধুরী',
+    'শিশুসাহিত্যিক',
+    'জন্ম',
+    '📖',
+  ),
+  _HistoricalFigure(5, 13, 'সুকান্ত ভট্টাচার্য', 'কিশোর কবি', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(
+    5,
+    15,
+    'দেবেন্দ্রনাথ ঠাকুর',
+    'ব্রাহ্ম ধর্মগুরু',
+    'জন্ম',
+    '🕊️',
+  ),
+  _HistoricalFigure(5, 15, 'শহিদ সুখদেব থাপর', 'বিপ্লবী (ফাঁসি)', 'জন্ম', '⚔️'),
+  _HistoricalFigure(
+    5,
+    17,
+    'দ্বিজেন্দ্রলাল রায়',
+    'কবি ও গীতিকার',
+    'প্রয়াণ',
+    '🎼',
+  ),
+  _HistoricalFigure(5, 19, 'শম্ভু মিত্র', 'নাট্যব্যক্তিত্ব', 'প্রয়াণ', '🎭'),
+  _HistoricalFigure(5, 25, 'রাসবিহারী বসু', 'বিপ্লবী', 'জন্ম', '⚔️'),
+  _HistoricalFigure(
+    5,
+    25,
+    'রামকিঙ্কর বেইজ',
+    'ভাস্কর ও চিত্রশিল্পী',
+    'জন্ম',
+    '🗿',
+  ),
+  _HistoricalFigure(
+    5,
+    28,
+    'বিনায়ক দামোদর সাভারকর',
+    'স্বাধীনতা সংগ্রামী',
+    'জন্ম',
+    '✊',
+  ),
+  _HistoricalFigure(
+    5,
+    29,
+    'সুনীতিকুমার চট্টোপাধ্যায়',
+    'ভাষাতত্ত্ববিদ',
+    'প্রয়াণ',
+    '📗',
+  ),
+
+  // ───────────── জুন ─────────────
+  _HistoricalFigure(6, 9, 'বিরসা মুন্ডা', 'আদিবাসী নেতা', 'প্রয়াণ', '🏹'),
+  _HistoricalFigure(
+    6,
+    10,
+    'বুদ্ধদেব দাশগুপ্ত',
+    'চলচ্চিত্র নির্মাতা',
+    'প্রয়াণ',
+    '🎬',
+  ),
+  _HistoricalFigure(6, 11, 'ছবি বিশ্বাস', 'অভিনেতা', 'প্রয়াণ', '🎬'),
+  _HistoricalFigure(6, 11, 'রামপ্রসাদ বিসমিল', 'বিপ্লবী', 'জন্ম', '⚔️'),
+  _HistoricalFigure(6, 18, 'রানি লক্ষ্মীবাই', 'ঝাঁসির রানি', 'প্রয়াণ', '⚔️'),
+  _HistoricalFigure(6, 18, 'উস্তাদ আলি আকবর খাঁ', 'সরোদ বাদক', 'প্রয়াণ', '🎻'),
+  _HistoricalFigure(
+    6,
+    18,
+    'মিলখা সিং',
+    'দৌড়বিদ (উড়ন্ত শিখ)',
+    'প্রয়াণ',
+    '🏃',
+  ),
+  _HistoricalFigure(6, 27, 'রাহুল দেব বর্মন', 'সুরকার', 'জন্ম', '🎹'),
+  _HistoricalFigure(
+    6,
+    28,
+    'প্রশান্তচন্দ্র মহলানবিশ',
+    'পরিসংখ্যানবিদ',
+    'প্রয়াণ',
+    '📊',
+  ),
+  _HistoricalFigure(
+    6,
+    29,
+    'প্রশান্তচন্দ্র মহলানবিশ',
+    'পরিসংখ্যানবিদ',
+    'জন্ম',
+    '📊',
+  ),
+  _HistoricalFigure(6, 30, 'দাদাভাই নওরোজি', 'রাজনীতিবিদ', 'প্রয়াণ', '🏛️'),
+
+  // ───────────── জুলাই ─────────────
+  _HistoricalFigure(
+    7,
+    7,
+    'শহিদ দীনেশ গুপ্ত',
+    'বিপ্লবী (ফাঁসি)',
+    'প্রয়াণ',
+    '⚔️',
+  ),
+  _HistoricalFigure(7, 8, 'জ্যোতি বসু', 'মুখ্যমন্ত্রী', 'জন্ম', '🏛️'),
+  _HistoricalFigure(
+    7,
+    8,
+    'সৌরভ গঙ্গোপাধ্যায়',
+    'ক্রিকেটার (মহারাজ)',
+    'জন্ম',
+    '🏏',
+  ),
+  _HistoricalFigure(7, 13, 'ছবি বিশ্বাস', 'অভিনেতা', 'জন্ম', '🎬'),
+  _HistoricalFigure(7, 13, 'আশাপূর্ণা দেবী', 'সাহিত্যিক', 'প্রয়াণ', '📚'),
+  _HistoricalFigure(7, 16, 'অরুণা আসফ আলী', 'স্বাধীনতা সংগ্রামী', 'জন্ম', '✊'),
+  _HistoricalFigure(
+    7,
+    19,
+    'দ্বিজেন্দ্রলাল রায়',
+    'কবি ও গীতিকার',
+    'জন্ম',
+    '🎼',
+  ),
+  _HistoricalFigure(
+    7,
+    19,
+    'মঙ্গল পাণ্ডে',
+    'সিপাহি বিদ্রোহের নায়ক',
+    'জন্ম',
+    '⚔️',
+  ),
+  _HistoricalFigure(7, 20, 'মা সারদা দেবী', 'শ্রীশ্রীমা', 'প্রয়াণ', '🕉️'),
+  _HistoricalFigure(
+    7,
+    23,
+    'বালগঙ্গাধর তিলক',
+    'স্বাধীনতা সংগ্রামী',
+    'জন্ম',
+    '✊',
+  ),
+  _HistoricalFigure(7, 26, 'রজনীকান্ত সেন', 'কবি ও গীতিকার', 'জন্ম', '🎼'),
+  _HistoricalFigure(7, 27, 'কল্পনা দত্ত', 'বিপ্লবী', 'জন্ম', '⚔️'),
+  _HistoricalFigure(
+    7,
+    29,
+    'অরুণা আসফ আলী',
+    'স্বাধীনতা সংগ্রামী',
+    'প্রয়াণ',
+    '✊',
+  ),
+  _HistoricalFigure(7, 31, 'উধম সিং', 'বিপ্লবী (ফাঁসি)', 'প্রয়াণ', '⚔️'),
+
+  // ───────────── আগস্ট ─────────────
+  _HistoricalFigure(
+    8,
+    1,
+    'বালগঙ্গাধর তিলক',
+    'স্বাধীনতা সংগ্রামী',
+    'প্রয়াণ',
+    '✊',
+  ),
+  _HistoricalFigure(8, 1, 'নীরদচন্দ্র চৌধুরী', 'সাহিত্যিক', 'প্রয়াণ', '📚'),
+  _HistoricalFigure(
+    8,
+    2,
+    'রামকিঙ্কর বেইজ',
+    'ভাস্কর ও চিত্রশিল্পী',
+    'প্রয়াণ',
+    '🗿',
+  ),
+  _HistoricalFigure(8, 7, 'অবনীন্দ্রনাথ ঠাকুর', 'চিত্রশিল্পী', 'জন্ম', '🎨'),
+  _HistoricalFigure(8, 12, 'বিক্রম সারাভাই', 'মহাকাশ বিজ্ঞানী', 'জন্ম', '🚀'),
+  _HistoricalFigure(8, 15, 'সুকান্ত ভট্টাচার্য', 'কিশোর কবি', 'জন্ম', '✒️'),
+  _HistoricalFigure(
+    8,
+    18,
+    'দেবব্রত বিশ্বাস',
+    'রবীন্দ্রসঙ্গীত শিল্পী',
+    'প্রয়াণ',
+    '🎤',
+  ),
+  _HistoricalFigure(8, 19, 'উৎপল দত্ত', 'নাট্যকার ও অভিনেতা', 'প্রয়াণ', '🎭'),
+  _HistoricalFigure(8, 20, 'গোষ্ঠ পাল', 'ফুটবলার (চীনের প্রাচীর)', 'জন্ম', '⚽'),
+  _HistoricalFigure(
+    8,
+    21,
+    'উস্তাদ বিসমিল্লাহ খাঁ',
+    'সানাই বাদক',
+    'প্রয়াণ',
+    '🎺',
+  ),
+  _HistoricalFigure(
+    8,
+    21,
+    'সুব্রহ্মণ্যন চন্দ্রশেখর',
+    'নোবেলজয়ী জ্যোতির্বিজ্ঞানী',
+    'প্রয়াণ',
+    '🌌',
+  ),
+  _HistoricalFigure(8, 22, 'শম্ভু মিত্র', 'নাট্যব্যক্তিত্ব', 'জন্ম', '🎭'),
+  _HistoricalFigure(
+    8,
+    22,
+    'দেবব্রত বিশ্বাস',
+    'রবীন্দ্রসঙ্গীত শিল্পী',
+    'জন্ম',
+    '🎤',
+  ),
+  _HistoricalFigure(
+    8,
+    24,
+    'শহিদ শিবরাম রাজগুরু',
+    'বিপ্লবী (ফাঁসি)',
+    'জন্ম',
+    '⚔️',
+  ),
+  _HistoricalFigure(8, 26, 'অতুলপ্রসাদ সেন', 'কবি ও গীতিকার', 'প্রয়াণ', '🎼'),
+  _HistoricalFigure(
+    8,
+    26,
+    'ভানু বন্দ্যোপাধ্যায়',
+    'কৌতুক অভিনেতা',
+    'জন্ম',
+    '🎭',
+  ),
+  _HistoricalFigure(8, 29, 'মেজর ধ্যানচাঁদ', 'হকির জাদুকর', 'জন্ম', '🏑'),
+
+  // ───────────── সেপ্টেম্বর ─────────────
+  _HistoricalFigure(9, 4, 'দাদাভাই নওরোজি', 'রাজনীতিবিদ', 'জন্ম', '🏛️'),
+  _HistoricalFigure(
+    9,
+    5,
+    'ড. সর্বপল্লী রাধাকৃষ্ণন',
+    'দার্শনিক ও রাষ্ট্রপতি',
+    'জন্ম',
+    '🎓',
+  ),
+  _HistoricalFigure(9, 5, 'সলিল চৌধুরী', 'সুরকার', 'প্রয়াণ', '🎹'),
+  _HistoricalFigure(
+    9,
+    6,
+    'উস্তাদ আলাউদ্দিন খাঁ',
+    'সঙ্গীতগুরু',
+    'প্রয়াণ',
+    '🎻',
+  ),
+  _HistoricalFigure(9, 10, 'সুকুমার রায়', 'শিশুসাহিত্যিক', 'প্রয়াণ', '✒️'),
+  _HistoricalFigure(9, 10, 'বাঘা যতীন', 'বিপ্লবী', 'প্রয়াণ', '⚔️'),
+  _HistoricalFigure(9, 13, 'সৈয়দ মুজতবা আলী', 'সাহিত্যিক', 'জন্ম', '📚'),
+  _HistoricalFigure(9, 13, 'রজনীকান্ত সেন', 'কবি ও গীতিকার', 'প্রয়াণ', '🎼'),
+  _HistoricalFigure(
+    9,
+    16,
+    'এম. এস. শুভলক্ষ্মী',
+    'শাস্ত্রীয় সঙ্গীতশিল্পী',
+    'জন্ম',
+    '🎤',
+  ),
+  _HistoricalFigure(9, 17, 'গগনেন্দ্রনাথ ঠাকুর', 'চিত্রশিল্পী', 'জন্ম', '🎨'),
+  _HistoricalFigure(
+    9,
+    19,
+    'সুচিত্রা মিত্র',
+    'রবীন্দ্রসঙ্গীত শিল্পী',
+    'জন্ম',
+    '🎤',
+  ),
+  _HistoricalFigure(
+    9,
+    28,
+    'লতা মঙ্গেশকর',
+    'কিংবদন্তি সঙ্গীতশিল্পী',
+    'জন্ম',
+    '🎤',
+  ),
+
+  // ───────────── অক্টোবর ─────────────
+  _HistoricalFigure(10, 1, 'শচীন দেব বর্মন', 'সুরকার', 'জন্ম', '🎹'),
+  _HistoricalFigure(10, 2, 'তপন সিংহ', 'চলচ্চিত্র নির্মাতা', 'জন্ম', '🎬'),
+  _HistoricalFigure(
+    10,
+    4,
+    'সন্ধ্যা মুখোপাধ্যায়',
+    'সঙ্গীতশিল্পী',
+    'জন্ম',
+    '🎤',
+  ),
+  _HistoricalFigure(
+    10,
+    14,
+    'নিখিল বন্দ্যোপাধ্যায়',
+    'সেতার বাদক',
+    'জন্ম',
+    '🎻',
+  ),
+  _HistoricalFigure(10, 19, 'মাতঙ্গিনী হাজরা', 'বিপ্লবী', 'জন্ম', '⚔️'),
+  _HistoricalFigure(
+    10,
+    19,
+    'সুব্রহ্মণ্যন চন্দ্রশেখর',
+    'নোবেলজয়ী জ্যোতির্বিজ্ঞানী',
+    'জন্ম',
+    '🌌',
+  ),
+  _HistoricalFigure(10, 20, 'অতুলপ্রসাদ সেন', 'কবি ও গীতিকার', 'জন্ম', '🎼'),
+  _HistoricalFigure(10, 22, 'আশফাকউল্লা খান', 'বিপ্লবী', 'জন্ম', '⚔️'),
+  _HistoricalFigure(10, 30, 'সুকুমার রায়', 'শিশুসাহিত্যিক', 'জন্ম', '✒️'),
+  _HistoricalFigure(
+    10,
+    30,
+    'স্বামী দয়ানন্দ সরস্বতী',
+    'আর্য সমাজের প্রতিষ্ঠাতা',
+    'প্রয়াণ',
+    '🕉️',
+  ),
+  _HistoricalFigure(10, 31, 'শচীন দেব বর্মন', 'সুরকার', 'প্রয়াণ', '🎹'),
+
+  // ───────────── নভেম্বর ─────────────
+  _HistoricalFigure(
+    11,
+    3,
+    'অমর্ত্য সেন',
+    'নোবেলজয়ী অর্থনীতিবিদ',
+    'জন্ম',
+    '🏅',
+  ),
+  _HistoricalFigure(
+    11,
+    9,
+    'হরগোবিন্দ খোরানা',
+    'নোবেলজয়ী বিজ্ঞানী',
+    'প্রয়াণ',
+    '🧬',
+  ),
+  _HistoricalFigure(
+    11,
+    11,
+    'মৌলানা আবুল কালাম আজাদ',
+    'স্বাধীনতা সংগ্রামী ও শিক্ষামন্ত্রী',
+    'জন্ম',
+    '📗',
+  ),
+  _HistoricalFigure(11, 12, 'মদনমোহন মালব্য', 'শিক্ষাব্রতী', 'প্রয়াণ', '🎓'),
+  _HistoricalFigure(11, 15, 'বিরসা মুন্ডা', 'আদিবাসী নেতা', 'জন্ম', '🏹'),
+  _HistoricalFigure(
+    11,
+    15,
+    'সৌমিত্র চট্টোপাধ্যায়',
+    'অভিনেতা',
+    'প্রয়াণ',
+    '🎬',
+  ),
+  _HistoricalFigure(
+    11,
+    17,
+    'হরপ্রসাদ শাস্ত্রী',
+    'পণ্ডিত ও গবেষক',
+    'প্রয়াণ',
+    '📗',
+  ),
+  _HistoricalFigure(11, 19, 'রানি লক্ষ্মীবাই', 'ঝাঁসির রানি', 'জন্ম', '⚔️'),
+  _HistoricalFigure(11, 19, 'সলিল চৌধুরী', 'সুরকার', 'জন্ম', '🎹'),
+  _HistoricalFigure(
+    11,
+    19,
+    'কেশবচন্দ্র সেন',
+    'ব্রাহ্ম সমাজ নেতা',
+    'জন্ম',
+    '🕊️',
+  ),
+  _HistoricalFigure(11, 20, 'মিলখা সিং', 'দৌড়বিদ (উড়ন্ত শিখ)', 'জন্ম', '🏃'),
+  _HistoricalFigure(11, 23, 'নীরদচন্দ্র চৌধুরী', 'সাহিত্যিক', 'জন্ম', '📚'),
+  _HistoricalFigure(
+    11,
+    26,
+    'সুনীতিকুমার চট্টোপাধ্যায়',
+    'ভাষাতত্ত্ববিদ',
+    'জন্ম',
+    '📗',
+  ),
+  _HistoricalFigure(11, 28, 'জ্যোতিরাও ফুলে', 'সমাজ সংস্কারক', 'প্রয়াণ', '👣'),
+  _HistoricalFigure(11, 30, 'বুদ্ধদেব বসু', 'কবি ও সাহিত্যিক', 'জন্ম', '✒️'),
+
+  // ───────────── ডিসেম্বর ─────────────
+  _HistoricalFigure(12, 2, 'বিমল মিত্র', 'সাহিত্যিক', 'প্রয়াণ', '📚'),
+  _HistoricalFigure(12, 3, 'নন্দলাল বসু', 'চিত্রশিল্পী', 'জন্ম', '🎨'),
+  _HistoricalFigure(12, 3, 'মেজর ধ্যানচাঁদ', 'হকির জাদুকর', 'প্রয়াণ', '🏑'),
+  _HistoricalFigure(
+    12,
+    5,
+    'অবনীন্দ্রনাথ ঠাকুর',
+    'চিত্রশিল্পী',
+    'প্রয়াণ',
+    '🎨',
+  ),
+  _HistoricalFigure(12, 6, 'হরপ্রসাদ শাস্ত্রী', 'পণ্ডিত ও গবেষক', 'জন্ম', '📗'),
+  _HistoricalFigure(12, 7, 'বাঘা যতীন', 'বিপ্লবী', 'জন্ম', '⚔️'),
+  _HistoricalFigure(12, 8, 'শহিদ বাদল গুপ্ত', 'বিপ্লবী', 'প্রয়াণ', '⚔️'),
+  _HistoricalFigure(12, 9, 'বেগম রোকেয়া', 'সমাজ সংস্কারক', 'প্রয়াণ', '👩‍🏫'),
+  _HistoricalFigure(12, 11, 'সমরেশ বসু', 'সাহিত্যিক', 'জন্ম', '✒️'),
+  _HistoricalFigure(
+    12,
+    11,
+    'এম. এস. শুভলক্ষ্মী',
+    'শাস্ত্রীয় সঙ্গীতশিল্পী',
+    'প্রয়াণ',
+    '🎤',
+  ),
+  _HistoricalFigure(12, 13, 'শহিদ বিনয় বসু', 'বিপ্লবী', 'প্রয়াণ', '⚔️'),
+  _HistoricalFigure(
+    12,
+    19,
+    'রামপ্রসাদ বিসমিল',
+    'বিপ্লবী (ফাঁসি)',
+    'প্রয়াণ',
+    '⚔️',
+  ),
+  _HistoricalFigure(
+    12,
+    19,
+    'আশফাকউল্লা খান',
+    'বিপ্লবী (ফাঁসি)',
+    'প্রয়াণ',
+    '⚔️',
+  ),
+  _HistoricalFigure(
+    12,
+    20,
+    'উপেন্দ্রকিশোর রায়চৌধুরী',
+    'শিশুসাহিত্যিক',
+    'প্রয়াণ',
+    '📖',
+  ),
+  _HistoricalFigure(12, 22, 'শ্রীনিবাস রামানুজন', 'গণিতজ্ঞ', 'জন্ম', '🔢'),
+  _HistoricalFigure(12, 22, 'মা সারদা দেবী', 'শ্রীশ্রীমা', 'জন্ম', '🕉️'),
+  _HistoricalFigure(12, 25, 'মদনমোহন মালব্য', 'শিক্ষাব্রতী', 'জন্ম', '🎓'),
+  _HistoricalFigure(12, 26, 'উধম সিং', 'বিপ্লবী (ফাঁসি)', 'জন্ম', '⚔️'),
+  _HistoricalFigure(
+    12,
+    30,
+    'বিক্রম সারাভাই',
+    'মহাকাশ বিজ্ঞানী',
+    'প্রয়াণ',
+    '🚀',
+  ),
+
   _HistoricalFigure(
     5,
     7,
@@ -3935,7 +4894,7 @@ const List<_HistoricalFigure> _historicalFigures = [
     'প্রয়াণ',
     '📖',
   ),
-  _HistoricalFigure(5, 25, 'কাজী নজরুল ইসলাম', 'বিদ্রোহী কবি', 'জন্ম', '✒️'),
+  _HistoricalFigure(5, 24, 'কাজী নজরুল ইসলাম', 'বিদ্রোহী কবি', 'জন্ম', '✒️'),
   _HistoricalFigure(8, 29, 'কাজী নজরুল ইসলাম', 'বিদ্রোহী কবি', 'প্রয়াণ', '✒️'),
   _HistoricalFigure(
     1,
@@ -4292,7 +5251,7 @@ const List<_HistoricalFigure> _historicalFigures = [
     'প্রয়াণ',
     '🎓',
   ),
-  _HistoricalFigure(9, 27, 'ভগৎ সিং', 'বিপ্লবী (ফাঁসি)', 'জন্ম', '🇮🇳'),
+  _HistoricalFigure(9, 28, 'ভগৎ সিং', 'বিপ্লবী (ফাঁসি)', 'জন্ম', '🇮🇳'),
   _HistoricalFigure(3, 23, 'ভগৎ সিং', 'বিপ্লবী (ফাঁসি)', 'প্রয়াণ', '🇮🇳'),
   _HistoricalFigure(
     11,
@@ -4753,6 +5712,91 @@ String _historyWikiTitleEn(String name) {
     'মহাশ্বেতা দেবী': 'Mahasweta Devi',
     'সুনীল গঙ্গোপাধ্যায়': 'Sunil Gangopadhyay',
     'সুধা মূর্তি': 'Sudha Murty',
+    // ── নতুন যোগ করা ব্যক্তিত্ব ──
+    'পল্লিকবি জসীম উদ্‌দীন': 'Jasimuddin',
+    'সাবিত্রীবাই ফুলে': 'Savitribai Phule',
+    'সুচিত্রা মিত্র': 'Suchitra Mitra',
+    'রাহুল দেব বর্মন': 'R. D. Burman',
+    'আশাপূর্ণা দেবী': 'Ashapurna Devi',
+    'কেশবচন্দ্র সেন': 'Keshab Chandra Sen',
+    'হরগোবিন্দ খোরানা': 'Har Gobind Khorana',
+    'তপন সিংহ': 'Tapan Sinha',
+    'জ্যোতি বসু': 'Jyoti Basu',
+    'সৌমিত্র চট্টোপাধ্যায়': 'Soumitra Chatterjee',
+    'দেবেন্দ্রনাথ ঠাকুর': 'Debendranath Tagore',
+    'রাসবিহারী বসু': 'Rash Behari Bose',
+    'নিখিল বন্দ্যোপাধ্যায়': 'Nikhil Banerjee',
+    'লালা লাজপত রায়': 'Lala Lajpat Rai',
+    'শঙ্খ ঘোষ': 'Shankha Ghosh',
+    'লতা মঙ্গেশকর': 'Lata Mangeshkar',
+    'গিরিশচন্দ্র ঘোষ': 'Girish Chandra Ghosh',
+    'কল্পনা দত্ত': 'Kalpana Datta',
+    'সৈয়দ মুজতবা আলী': 'Syed Mujtaba Ali',
+    'বুদ্ধদেব দাশগুপ্ত': 'Buddhadeb Dasgupta',
+    'স্বামী দয়ানন্দ সরস্বতী': 'Dayananda Saraswati',
+    'গগনেন্দ্রনাথ ঠাকুর': 'Gaganendranath Tagore',
+    'সন্ধ্যা মুখোপাধ্যায়': 'Sandhya Mukhopadhyay',
+    'গোপালকৃষ্ণ গোখলে': 'Gopal Krishna Gokhale',
+    'মৌলানা আবুল কালাম আজাদ': 'Abul Kalam Azad',
+    'বিনায়ক দামোদর সাভারকর': 'Vinayak Damodar Savarkar',
+    'ভানু বন্দ্যোপাধ্যায়': 'Bhanu Bandopadhyay',
+    'হরিচাঁদ ঠাকুর': 'Harichand Thakur',
+    'সমরেশ বসু': 'Samaresh Basu',
+    'গুরুচাঁদ ঠাকুর': 'Guruchand Thakur',
+    'বুদ্ধদেব বসু': 'Buddhadeva Bose',
+    'বিমল মিত্র': 'Bimal Mitra',
+    'উস্তাদ বিসমিল্লাহ খাঁ': 'Bismillah Khan',
+    'শহিদ সুখদেব থাপর': 'Sukhdev Thapar',
+    'শহিদ শিবরাম রাজগুরু': 'Shivaram Rajguru',
+    'উৎপল দত্ত': 'Utpal Dutt',
+    'মঙ্গল পাণ্ডে': 'Mangal Pandey',
+    'গোষ্ঠ পাল': 'Gostha Pal',
+    'যামিনী রায়': 'Jamini Roy',
+    'জ্যোতিরাও ফুলে': 'Jyotirao Phule',
+    'উস্তাদ আলি আকবর খাঁ': 'Ali Akbar Khan',
+    'নন্দলাল বসু': 'Nandalal Bose',
+    'শচীন তেন্ডুলকর': 'Sachin Tendulkar',
+    'শ্রীনিবাস রামানুজন': 'Srinivasa Ramanujan',
+    'উপেন্দ্রকিশোর রায়চৌধুরী': 'Upendrakishore Ray Chowdhury',
+    'সুকান্ত ভট্টাচার্য': 'Sukanta Bhattacharya',
+    'দ্বিজেন্দ্রলাল রায়': 'Dwijendralal Ray',
+    'শম্ভু মিত্র': 'Sombhu Mitra',
+    'রামকিঙ্কর বেইজ': 'Ramkinkar Baij',
+    'সুনীতিকুমার চট্টোপাধ্যায়': 'Suniti Kumar Chatterji',
+    'বিরসা মুন্ডা': 'Birsa Munda',
+    'ছবি বিশ্বাস': 'Chhabi Biswas',
+    'রামপ্রসাদ বিসমিল': 'Ram Prasad Bismil',
+    'রানি লক্ষ্মীবাই': 'Rani of Jhansi',
+    'মিলখা সিং': 'Milkha Singh',
+    'প্রশান্তচন্দ্র মহলানবিশ': 'Prasanta Chandra Mahalanobis',
+    'দাদাভাই নওরোজি': 'Dadabhai Naoroji',
+    'শহিদ দীনেশ গুপ্ত': 'Dinesh Gupta',
+    'সৌরভ গঙ্গোপাধ্যায়': 'Sourav Ganguly',
+    'অরুণা আসফ আলী': 'Aruna Asaf Ali',
+    'মা সারদা দেবী': 'Sarada Devi',
+    'বালগঙ্গাধর তিলক': 'Bal Gangadhar Tilak',
+    'রজনীকান্ত সেন': 'Rajanikanta Sen',
+    'উধম সিং': 'Udham Singh',
+    'নীরদচন্দ্র চৌধুরী': 'Nirad C. Chaudhuri',
+    'অবনীন্দ্রনাথ ঠাকুর': 'Abanindranath Tagore',
+    'বিক্রম সারাভাই': 'Vikram Sarabhai',
+    'দেবব্রত বিশ্বাস': 'Debabrata Biswas',
+    'সুব্রহ্মণ্যন চন্দ্রশেখর': 'Subrahmanyan Chandrasekhar',
+    'অতুলপ্রসাদ সেন': 'Atulprasad Sen',
+    'মেজর ধ্যানচাঁদ': 'Dhyan Chand',
+    'ড. সর্বপল্লী রাধাকৃষ্ণন': 'Sarvepalli Radhakrishnan',
+    'সলিল চৌধুরী': 'Salil Chowdhury',
+    'উস্তাদ আলাউদ্দিন খাঁ': 'Allauddin Khan',
+    'সুকুমার রায়': 'Sukumar Ray',
+    'বাঘা যতীন': 'Bagha Jatin',
+    'এম. এস. শুভলক্ষ্মী': 'M. S. Subbulakshmi',
+    'শচীন দেব বর্মন': 'S. D. Burman',
+    'আশফাকউল্লা খান': 'Ashfaqulla Khan',
+    'অমর্ত্য সেন': 'Amartya Sen',
+    'মদনমোহন মালব্য': 'Madan Mohan Malaviya',
+    'হরপ্রসাদ শাস্ত্রী': 'Haraprasad Shastri',
+    'শহিদ বাদল গুপ্ত': 'Badal Gupta',
+    'শহিদ বিনয় বসু': 'Benoy Basu',
   };
   return map[name] ?? name;
 }
@@ -5018,7 +6062,7 @@ class _HistoryBannerState extends State<_HistoryBanner> {
                       ),
                       const SizedBox(height: 2),
                       const Text(
-                        'ছবি • জীবনী • Date Explorer • Reminder',
+                        'ছবি • জীবনী • তারিখ খোঁজা • রিমাইন্ডার',
                         style: TextStyle(color: Colors.white60, fontSize: 10.5),
                       ),
                     ],
@@ -5035,7 +6079,10 @@ class _HistoryBannerState extends State<_HistoryBanner> {
       );
     }
     return SizedBox(
-      height: 92,
+      // ভেতরে ৩ লাইন লেখা — নাম, পরিচয় ও জন্ম/প্রয়াণের দিন। লেখা বড়
+      // করা থাকলে (বিশেষত "বড় লেখার মোড"-এ) ৯২ পিক্সেলে ধরত না, তাই
+      // শরৎচন্দ্র চট্টোপাধ্যায়ের মতো লম্বা নামে ঘর ছাপিয়ে যেত।
+      height: 92 * _tsFactor(context),
       child: PageView.builder(
         controller: _controller,
         itemCount: _items.length,
@@ -5544,7 +6591,7 @@ class _HomeLiveTimingSystemState extends State<_HomeLiveTimingSystem> {
                   ),
                 ),
                 child: const Text(
-                  '● LIVE',
+                  '● সরাসরি',
                   style: TextStyle(
                     color: Color(0xFFFF9B98),
                     fontSize: 8.5,
@@ -5813,12 +6860,19 @@ class _HeroDateCardState extends State<_HeroDateCard> {
             else
               const PanjikaArt('sun', size: 15),
             const SizedBox(width: 5),
-            Text(
-              loading ? 'তাপমাত্রা লোড হচ্ছে…' : 'আজ ${bnNum(temp.round())}°C',
-              style: TextStyle(
-                color: const Color(0xFFFFD36E),
-                fontSize: loading ? 10.5 : 12.5,
-                fontWeight: FontWeight.w800,
+            // বড় লেখায় চিপটা যাতে ঘর ছাপিয়ে না যায়
+            Flexible(
+              child: Text(
+                loading
+                    ? 'তাপমাত্রা লোড হচ্ছে…'
+                    : 'আজ ${bnNum(temp.round())}°C',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: const Color(0xFFFFD36E),
+                  fontSize: loading ? 10.5 : 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ],
@@ -5839,7 +6893,7 @@ class _HeroDateCardState extends State<_HeroDateCard> {
   }
 
   void _shareToday() {
-    Share.share(
+    shareFromApp(
       buildTodayPanchangSummary(),
       subject: 'আজকের পঞ্চাঙ্গ — বাংলা পঞ্জিকা',
     );
@@ -5940,12 +6994,16 @@ class _HeroDateCardState extends State<_HeroDateCard> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '${tithi.paksha} পক্ষ • ${tithi.name} তিথি',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                  Flexible(
+                    child: Text(
+                      '${tithi.paksha} পক্ষ • ${tithi.name} তিথি',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 5),
@@ -6003,9 +7061,13 @@ class _HeroDateCardState extends State<_HeroDateCard> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(color: Colors.white, fontSize: 13),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+        ),
       ),
     );
   }
@@ -6356,7 +7418,7 @@ class _UpcomingFestivalsCard extends StatelessWidget {
     String date,
     String countdown,
   ) {
-    Share.share(
+    shareFromApp(
       '$icon শুভ $title\n📅 $date • $countdown\n\n📲 বাংলা পঞ্জিকা অ্যাপ থেকে',
       subject: title,
     );
@@ -6736,7 +7798,9 @@ class _FeatureSheet extends StatelessWidget {
                             ),
                           ),
                           child: Text(
-                            '$title — এই demo screen কাজ করছে। Final app-এ live database/API data যুক্ত হবে।',
+                            '$title — এই অংশের বিস্তারিত তথ্য এখনো যোগ করা '
+                            'হয়নি। "আজকের পঞ্জিকা" ও "বাংলা ক্যালেন্ডার"-এ '
+                            'আজকের তিথি, নক্ষত্র ও উৎসবের পূর্ণ তথ্য পাবেন।',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 13,
@@ -7923,18 +8987,36 @@ class _RashiScreenState extends State<RashiScreen> {
         border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            '$icon $label',
-            style: const TextStyle(color: Colors.white70, fontSize: 10.5),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '$icon $label',
+                maxLines: 1,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 10.5,
+                  height: 1.0,
+                ),
+              ),
+            ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            '${bnDigits(score.toString())}/১০০',
-            style: const TextStyle(
-              color: Color(0xFFFFD36E),
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
+          const SizedBox(height: 4),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '${bnDigits(score.toString())}/১০০',
+                maxLines: 1,
+                style: const TextStyle(
+                  color: Color(0xFFFFD36E),
+                  fontSize: 14,
+                  height: 1.0,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
           ),
         ],
@@ -7949,7 +9031,11 @@ class _RashiScreenState extends State<RashiScreen> {
     final tithi = PanchangCalculator.tithiFor(_now);
     final nakIndex = PanchangCalculator.nakshatraIndexFor(_now);
     final moonIndex = PanchangCalculator.rashiIndexFor(_now);
-    final luckyWindow = _luckyWindowFor(_selectedIndex, _now);
+    final luckyRaw = _luckyWindowFor(_selectedIndex, _now);
+    final luckyWindow = (
+      panchangInstant(luckyRaw.$1),
+      panchangInstant(luckyRaw.$2),
+    );
     final windowStarted = !_now.isBefore(luckyWindow.$1);
     final windowEnded = !_now.isBefore(luckyWindow.$2);
     final compareScore = _compatibilityScore(_selectedIndex, _compareIndex);
@@ -8037,22 +9123,35 @@ class _RashiScreenState extends State<RashiScreen> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Text(
-                                      ContentData._rashiSymbols[i],
-                                      style: const TextStyle(
-                                        fontSize: 24,
-                                        color: Color(0xFFFFD36E),
+                                    Flexible(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          ContentData._rashiSymbols[i],
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            height: 1.0,
+                                            color: Color(0xFFFFD36E),
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      PanchangCalculator.rashiNames[i],
-                                      style: TextStyle(
-                                        color: selected
-                                            ? Colors.white
-                                            : Colors.white70,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w800,
+                                    const SizedBox(height: 3),
+                                    Flexible(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          PanchangCalculator.rashiNames[i],
+                                          maxLines: 1,
+                                          style: TextStyle(
+                                            color: selected
+                                                ? Colors.white
+                                                : Colors.white70,
+                                            fontSize: 10.5,
+                                            height: 1.0,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -8101,6 +9200,8 @@ class _RashiScreenState extends State<RashiScreen> {
                               children: [
                                 Text(
                                   PanchangCalculator.rashiNames[_selectedIndex],
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 22,
@@ -8110,6 +9211,8 @@ class _RashiScreenState extends State<RashiScreen> {
                                 const SizedBox(height: 4),
                                 Text(
                                   '${meta.element} • অধিপতি ${meta.rulingPlanet}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: Colors.white70,
                                     fontSize: 11.5,
@@ -8118,6 +9221,8 @@ class _RashiScreenState extends State<RashiScreen> {
                                 const SizedBox(height: 3),
                                 Text(
                                   meta.trait,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     color: Colors.white60,
                                     fontSize: 11,
@@ -8350,7 +9455,7 @@ class _RashiScreenState extends State<RashiScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: const Text(
-                              '● LIVE',
+                              '● সরাসরি',
                               style: TextStyle(
                                 color: Color(0xFFFF9B98),
                                 fontSize: 8.5,
@@ -8372,7 +9477,7 @@ class _RashiScreenState extends State<RashiScreen> {
                       const SizedBox(height: 4),
                       Text(
                         windowEnded
-                            ? 'আজকের নির্বাচিত window শেষ হয়েছে'
+                            ? 'আজকের নির্বাচিত সময় শেষ হয়েছে'
                             : windowStarted
                             ? 'চলছে • শেষ হতে ${_countdown(luckyWindow.$2.difference(_now))}'
                             : 'শুরু হতে ${_countdown(luckyWindow.$1.difference(_now))}',
@@ -8384,7 +9489,7 @@ class _RashiScreenState extends State<RashiScreen> {
                       ),
                       const SizedBox(height: 6),
                       const Text(
-                        'রাহুকাল/যমগণ্ড/গুলিকাল এড়িয়ে daylight window থেকে ঐতিহ্যভিত্তিক suggestion।',
+                        'রাহুকাল/যমগণ্ড/গুলিকাল এড়িয়ে দিনের আলোর সময় থেকে ঐতিহ্যভিত্তিক suggestion।',
                         style: TextStyle(
                           color: Colors.white60,
                           fontSize: 10.5,
@@ -10316,12 +11421,20 @@ class AstrologerProfile {
 // আর নিচের _astrologerWhatsApp নম্বরটাও নিজের/পার্টনারের আসল নম্বর দিয়ে
 // বদলাতে হবে (দেশের কোড সহ, + বা স্পেস ছাড়া, যেমন ভারতের জন্য 91XXXXXXXXXX)
 const List<AstrologerProfile> _astrologers = [
-  AstrologerProfile('জ্যোতিষী ১', 'বিবাহ ও সম্পর্ক', '১৫+ বছরের অভিজ্ঞতা'),
-  AstrologerProfile('জ্যোতিষী ২', 'কর্মজীবন ও ব্যবসা', '১০+ বছরের অভিজ্ঞতা'),
   AstrologerProfile(
-    'জ্যোতিষী ৩',
-    'স্বাস্থ্য ও পারিবারিক সমস্যা',
-    '২০+ বছরের অভিজ্ঞতা',
+    'বিবাহ ও সম্পর্ক পরামর্শ',
+    'বিবাহ, সম্পর্ক ও পারিবারিক বিষয়',
+    'অভিজ্ঞ জ্যোতিষী',
+  ),
+  AstrologerProfile(
+    'কর্মজীবন ও ব্যবসা পরামর্শ',
+    'চাকরি, ব্যবসা ও অর্থ',
+    'অভিজ্ঞ জ্যোতিষী',
+  ),
+  AstrologerProfile(
+    'স্বাস্থ্য ও গৃহ পরামর্শ',
+    'স্বাস্থ্য, গৃহ ও পারিবারিক শান্তি',
+    'অভিজ্ঞ জ্যোতিষী',
   ),
 ];
 const String _astrologerWhatsApp = '';
@@ -10464,6 +11577,24 @@ class _AstrologerBookingScreenState extends State<AstrologerBookingScreen> {
       when: when,
       notes: _notesCtrl.text.trim(),
     );
+    // যোগাযোগের নম্বর না বসানো থাকলে সত্যিই কোথাও কিছু পাঠানো যায় না।
+    // আগে তবু ফর্মটা জমা নিয়ে সব লেখা মুছে দিত, তারপর "শীঘ্রই চালু হবে"
+    // দেখাত — ব্যবহারকারীর পরিশ্রম নষ্ট হতো। এখন আগেই জানিয়ে দেওয়া হয়,
+    // লেখা যেমন ছিল তেমনই থাকে।
+    if (_astrologerWhatsApp.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'জ্যোতিষী পরামর্শ সেবা এখনো চালু হয়নি — খুব শিগগিরই '
+              'আসছে। আপনার লেখা মুছে যায়নি।',
+            ),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
     await BookingStore.instance.add(booking);
     final timeLabel = TimeOfDay.fromDateTime(when).format(context);
     final extra = booking.notes.isEmpty
@@ -10490,13 +11621,98 @@ class _AstrologerBookingScreenState extends State<AstrologerBookingScreen> {
         _when = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ বুকিং রিকোয়েস্ট পাঠানো হয়েছে')),
+        const SnackBar(
+          content: Text('✅ বুকিং রিকোয়েস্ট পাঠানো হয়েছে'),
+          duration: Duration(seconds: 4),
+        ),
       );
     }
   }
 
+  /// যোগাযোগের নম্বর এখনো বসানো হয়নি — তাই বুকিং ফর্ম দেখিয়ে
+  /// ব্যবহারকারীর সময় নষ্ট না করে পরিষ্কার বার্তা দেখানো হয়।
+  /// [_astrologerWhatsApp]-এ আসল নম্বর বসালেই ফর্মটা নিজে থেকে
+  /// ফিরে আসবে, নিচের কোডে হাত দিতে হবে না।
+  Widget _comingSoon() {
+    return CosmicBackground(
+      child: Column(
+        children: [
+          const _ScreenHeader(title: '🔮 জ্যোতিষী পরামর্শ'),
+          Expanded(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('🔮', style: TextStyle(fontSize: 56)),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'শীঘ্রই আসছে',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFFFFD36E),
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'অভিজ্ঞ জ্যোতিষীর সঙ্গে সরাসরি পরামর্শের সুবিধা '
+                      'তৈরি হচ্ছে। বিবাহ, কর্মজীবন, স্বাস্থ্য বা গৃহ — '
+                      'যেকোনো বিষয়ে কথা বলা যাবে।',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        height: 1.7,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF08172F).withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: const Color(
+                            0xFFFFD36E,
+                          ).withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: const Text(
+                        'পরের আপডেটে এই সুবিধাটি চালু হবে',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white60, fontSize: 12.5),
+                      ),
+                    ),
+                    const SizedBox(height: 26),
+                    const Text(
+                      'ততক্ষণ অ্যাপের কুষ্ঠি, রাশিফল ও শুভ দিনের '
+                      'তালিকা ব্যবহার করে দেখতে পারেন।',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12.5,
+                        height: 1.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_astrologerWhatsApp.isEmpty) return _comingSoon();
     return CosmicBackground(
       child: Column(
         children: [
@@ -10705,6 +11921,7 @@ class ContentData {
     'পূর্ণিমা': _livePurnima(),
     'অমাবস্যা': _liveAmabasya(),
     'পূজা ও ব্রত': _livePujaBrata(),
+    'একাদশী': _liveEkadashi(),
     'উৎসব ও বিশেষ দিন': _liveUpcomingFestivals(),
   };
 
@@ -10782,6 +11999,40 @@ class ContentData {
       final month = BengaliDateUtil.monthInfoFor(d).name;
       return ['$month পূর্ণিমা', _fmtTithiTimingFor(d)];
     }).toList();
+  }
+
+  /// আগামী একাদশীর তারিখ ও উপবাসের নিয়ম। আগে 'একাদশী'-র জন্য কোনো
+  /// তথ্যই বসানো ছিল না, তাই চাপ দিলে ডেমো-বার্তা দেখাত।
+  static List<List<String>> _liveEkadashi() {
+    final dates = BengaliCalendarData.findAuspiciousDates(
+      'ekadashi',
+      count: 6,
+      maxDays: 220,
+    );
+    final rows = <List<String>>[];
+    for (final d in dates) {
+      final info = BengaliDateUtil.monthInfoFor(d);
+      final tithi = PanchangCalculator.tithiFor(d);
+      final bDay = d.difference(info.start).inDays + 1;
+      rows.add([
+        '${tithi.paksha} একাদশী — ${bnNum(bDay)} ${info.name}',
+        '${PanchangCalculator.weekdayName(d)}, ${bnNum(d.day)} '
+            '${gregMonthBn(d.month)} ${bnNum(d.year)}\n'
+            '${_fmtTithiTimingFor(d)}',
+      ]);
+    }
+    rows.add([
+      'উপবাসের নিয়ম',
+      'একাদশীতে চাল, ডাল ও শস্যজাতীয় খাবার বর্জন করা হয়। ফল, দুধ ও '
+          'সাবু গ্রহণ করা যায়। আগের দিন (দশমী) রাতে হালকা আহার এবং পরের '
+          'দিন (দ্বাদশী) সকালে পারণের প্রচলন আছে।',
+    ]);
+    rows.add([
+      'কেন পালন',
+      'বিষ্ণুর উদ্দেশে এই ব্রত পালিত হয়। মাসে দুবার — শুক্লপক্ষে ও '
+          'কৃষ্ণপক্ষে একবার করে, বছরে চব্বিশবার।',
+    ]);
+    return rows;
   }
 
   /// আজকের পরের real অমাবস্যার তারিখ — real তিথি হিসেব থেকে বের করা
@@ -11167,7 +12418,7 @@ class _SideMenu extends StatelessWidget {
     ['☁️', 'ক্লাউড ব্যাকআপ'],
     ['🔮', 'জ্যোতিষী পরামর্শ বুকিং'],
     ['🌌', 'লাইভ সৌরজগৎ'],
-    ['✨', 'প্রিমিয়াম'],
+    ['💎', 'বিশেষ সংগ্রহ'],
     ['⚙️', 'সেটিংস'],
     ['👤', 'প্রোফাইল'],
   ];
@@ -14225,6 +15476,94 @@ class BengaliDateUtil {
     return list;
   }
 
+  // ------------------------------------------------------------------
+  // চান্দ্রমাস (পূর্ণিমান্ত) — উৎসবের মাস বের করার জন্য
+  // ------------------------------------------------------------------
+  // বাংলা পঞ্জিকার মাসগুলো সৌর (সংক্রান্তি থেকে সংক্রান্তি), কিন্তু
+  // উৎসবের নাম চান্দ্রমাস ধরে — "আশ্বিন শুক্ল ষষ্ঠী = মহাষষ্ঠী",
+  // "কার্তিক কৃষ্ণ ত্রয়োদশী = ধনতেরাস"। দুটো এক নয়: দুর্গাপূজা
+  // আশ্বিনের পূজা হলেও সৌর কার্তিকে গড়িয়ে যায়। আগে সৌর মাস ধরে
+  // উৎসব খোঁজা হতো, তাতে ষষ্ঠী-সপ্তমী বাদ পড়ত আর গোটা দুর্গাপূজা
+  // পরের মাসে আরেকবার দেখাত।
+  //
+  // পূর্ণিমান্ত নিয়ম: শুক্লপক্ষের দিন **আগের** অমাবস্যার মাসের নামে,
+  // কৃষ্ণপক্ষের দিন **পরের** অমাবস্যার মাসের নামে।
+
+  static final Map<String, String> _lunarNameCache = {};
+  static final Map<String, bool> _adhikaCache = {};
+
+  static String _dayKey(DateTime d) => '${d.year}-${d.month}-${d.day}';
+
+  /// এই দিনের পরদিন শুক্লপক্ষ শুরু হচ্ছে কিনা — অর্থাৎ দিনটা চান্দ্রমাসের
+  /// শেষ দিন (অমাবস্যা)। সরাসরি "তিথি = অমাবস্যা" না মিলিয়ে পক্ষ বদল
+  /// দেখা হয়, কারণ ছোট অমাবস্যা কোনো সূর্যোদয় না-ছুঁয়েও যেতে পারে।
+  static bool _isNewMoonBoundary(DateTime d) {
+    final a = PanchangCalculator.tithiFor(
+      PanchangCalculator.sunTimes(d).sunrise,
+    ).paksha;
+    final b = PanchangCalculator.tithiFor(
+      PanchangCalculator.sunTimes(d.add(const Duration(days: 1))).sunrise,
+    ).paksha;
+    return a == 'কৃষ্ণ' && b == 'শুক্ল';
+  }
+
+  /// এই দিনটা যে চান্দ্রমাসে পড়েছে, সেই মাসের শেষ অমাবস্যার দিন
+  static DateTime? _newMoonAnchor(DateTime day, TithiInfo tithi) {
+    final idx = tithi.index;
+    final guess = tithi.paksha == 'শুক্ল'
+        ? day.subtract(Duration(days: idx + 1))
+        : day.add(Duration(days: 29 - idx));
+    for (int off = 0; off <= 4; off++) {
+      for (final s in off == 0 ? const [0] : [off, -off]) {
+        final d = guess.add(Duration(days: s));
+        if (_isNewMoonBoundary(d)) return d;
+      }
+    }
+    return null;
+  }
+
+  /// পূর্ণিমান্ত নিয়মে চান্দ্রমাসের নাম
+  static String lunarMonthName(DateTime day, TithiInfo tithi) {
+    final key = _dayKey(day);
+    final hit = _lunarNameCache[key];
+    if (hit != null) return hit;
+    final a = _newMoonAnchor(day, tithi);
+    final name = a == null ? monthInfoFor(day).name : monthInfoFor(a).name;
+    if (_lunarNameCache.length > 900) _lunarNameCache.clear();
+    _lunarNameCache[key] = name;
+    return name;
+  }
+
+  /// এই চান্দ্রমাস "মলমাস" (অধিক মাস) কিনা। এক সৌর মাসের ভেতরেই পরপর
+  /// দুটো অমাবস্যা পড়লে ওই চান্দ্রমাস দুবার আসে — প্রথমটা মলমাস, তাতে
+  /// কোনো শুভকাজ বা উৎসব হয় না, উৎসব হয় দ্বিতীয়টায় (নিজ মাস)।
+  /// যেমন ২০২৬-এ ১৭ মে – ১৫ জুন অধিক জ্যৈষ্ঠ — এটা না ধরলে জামাইষষ্ঠী
+  /// ও দশহরা দু'বার দেখাত।
+  static bool isAdhikaMasa(DateTime day, TithiInfo tithi) {
+    final key = _dayKey(day);
+    final hit = _adhikaCache[key];
+    if (hit != null) return hit;
+    bool result = false;
+    final a = _newMoonAnchor(day, tithi);
+    if (a != null) {
+      DateTime? next;
+      var d = a.add(const Duration(days: 26));
+      for (int i = 0; i < 9; i++) {
+        if (_isNewMoonBoundary(d)) {
+          next = d;
+          break;
+        }
+        d = d.add(const Duration(days: 1));
+      }
+      if (next != null) {
+        result = monthInfoFor(a).name == monthInfoFor(next).name;
+      }
+    }
+    if (_adhikaCache.length > 900) _adhikaCache.clear();
+    _adhikaCache[key] = result;
+    return result;
+  }
+
   static BengaliMonthInfo monthInfoFor(DateTime date) {
     final boundaries = _boundariesAround(date.year);
     int idx = 0;
@@ -14254,6 +15593,10 @@ class CalendarEvent {
 ///   'sunrise'  — সূর্যোদয় (সাধারণ নিয়ম, বেশিরভাগ উৎসব)
 ///   'nishita'  — মধ্যরাত (শিবরাত্রি, কালীপূজার মতো রাতের পূজা)
 ///   'pradosh'  — সূর্যাস্ত (ধনতেরাসের মতো সন্ধ্যার পূজা)
+///   'last'     — তিথিটা যে শেষ সূর্যোদয় ছুঁয়েছে সেই দিন। একটা তিথি
+///                পরপর দুই সূর্যোদয়ে থাকলে দুর্গাপূজার মতো উৎসব একবারই
+///                হয় — এই নিয়মে তখন দ্বিতীয় দিনটাই ধরা হয়, ফলে ষষ্ঠী
+///                থেকে দশমী ঠিক এক দিন করে পরপর পড়ে।
 class _FestivalRule {
   final String month;
   final String paksha;
@@ -14271,6 +15614,46 @@ class _FestivalRule {
     this.icon, {
     this.ref = 'sunrise',
   });
+}
+
+/// সৌর মাসের শেষ দিক ধরে উৎসবের নিয়ম — তিথি নয়, সংক্রান্তি থেকে হিসেব।
+class _MonthEndRule {
+  final String month;
+
+  /// মাসের শেষ দিন থেকে কত দিন আগে (০ = শেষ দিনই)
+  final int fromEnd;
+  final String label;
+  final String category;
+  final String icon;
+  const _MonthEndRule(
+    this.month,
+    this.fromEnd,
+    this.label,
+    this.category,
+    this.icon,
+  );
+}
+
+/// একটা কাজের (বিবাহ, গৃহপ্রবেশ…) শুভ দিন বাছাইয়ের নিয়ম।
+class _ShubhoRule {
+  final String label;
+  final String icon;
+
+  /// এই কাজের জন্য প্রশস্ত নক্ষত্র
+  final Set<String> nakshatras;
+
+  /// প্রশস্ত তিথি (০ = প্রতিপদ … ১৪ = পূর্ণিমা/অমাবস্যা)
+  final Set<int> tithis;
+
+  /// প্রশস্ত বার
+  final Set<int> weekdays;
+  const _ShubhoRule(
+    this.label,
+    this.icon,
+    this.nakshatras,
+    this.tithis,
+    this.weekdays,
+  );
 }
 
 class BengaliCalendarData {
@@ -14292,26 +15675,218 @@ class BengaliCalendarData {
   /// লক্ষণীয়: শুক্লপক্ষের উৎসবগুলো চান্দ্রমাসের নামে পরিচিত হলেও প্রায়ই
   /// তার পরের সৌরমাসে পড়ে — যেমন দুর্গাপূজা "আশ্বিনের" পূজা হলেও সৌর
   /// কার্তিক মাসে পড়ে। তাই নিচে সৌরমাসের নামই ব্যবহার করা হয়েছে।
+  /// সৌর মাসের শেষ দিনে (সংক্রান্তিতে) পড়া উৎসব — এগুলো তিথি দিয়ে বের
+  /// হয় না, তাই আলাদা নিয়ম। `fromEnd` = মাসের শেষ দিন থেকে কত দিন আগে
+  /// (০ = শেষ দিনই, ১ = তার আগের দিন)।
+  ///
+  /// যেমন বিশ্বকর্মা পূজা ভাদ্রের শেষ দিনে, অর্থাৎ কন্যা সংক্রান্তিতে —
+  /// তাই প্রতি বছরই ১৭ সেপ্টেম্বরের আশপাশে পড়ে।
+  static const List<_MonthEndRule> _monthEndRules = [
+    _MonthEndRule('ভাদ্র', 0, 'বিশ্বকর্মা পূজা', 'general', '🔧'),
+    _MonthEndRule('শ্রাবণ', 0, 'মনসা পূজা', 'general', '🐍'),
+    _MonthEndRule('কার্তিক', 0, 'কার্তিক পূজা', 'general', '🪔'),
+    _MonthEndRule('পৌষ', 0, 'মকর সংক্রান্তি', 'general', '🪁'),
+    _MonthEndRule('চৈত্র', 1, 'নীল ষষ্ঠী', 'general', '🔱'),
+    _MonthEndRule('চৈত্র', 0, 'চড়ক পূজা ও গাজন', 'general', '🔥'),
+  ];
+
+  /// যেসব বছরের তারিখ ছাপা পঞ্জিকা ও রাজ্য সরকারের ছুটির তালিকার সাথে
+  /// মিলিয়ে যাচাই করা হয়েছে — এই বছরগুলোয় নিচের নিয়ম-ভিত্তিক হিসেব আর
+  /// চালানো হয় না, সরাসরি এই তারিখই দেখানো হয়। কারণ তিথির প্রকৃত শেষ
+  /// মুহূর্ত আর সূর্যোদয়ের ব্যবধান কখনো কয়েক মিনিটের হয়, তখন হিসেবে
+  /// এক দিন এদিক-ওদিক হতে পারে — ছাপা পঞ্জিকাই শেষ কথা।
+  ///
+  /// উৎস: পশ্চিমবঙ্গ সরকারের ২০২৬ সালের ছুটির তালিকা (নবান্ন) এবং
+  /// প্রচলিত বাংলা পঞ্জিকা। বিশ্বকর্মা পূজার ছুটি নবান্ন ১৭ থেকে বদলে
+  /// ১৮ সেপ্টেম্বর করেছে — সেটাই ধরা হয়েছে।
+  static const Map<int, Map<String, List<String>>> _verifiedFestivals = {
+    2026: {
+      '01-17': ['রটন্তী কালীপূজা'],
+      '01-23': ['সরস্বতী পূজা'],
+      '02-15': ['মহাশিবরাত্রি'],
+      '03-03': ['দোলযাত্রা'],
+      '04-01': ['হনুমান জয়ন্তী'],
+      '04-20': ['অক্ষয় তৃতীয়া'],
+      '05-01': ['বুদ্ধ পূর্ণিমা'],
+      '05-16': ['ফলহারিণী কালীপূজা'],
+      '06-20': ['জামাইষষ্ঠী'],
+      '06-24': ['দশহরা ও গঙ্গা পূজা'],
+      '07-16': ['রথযাত্রা'],
+      '07-18': ['বিপত্তারিণী পূজা'],
+      '07-24': ['উল্টোরথ'],
+      '07-29': ['গুরু পূর্ণিমা'],
+      '08-28': ['রাখি পূর্ণিমা'],
+      '09-04': ['জন্মাষ্টমী'],
+      '09-10': ['কৌশিকী অমাবস্যা'],
+      '09-14': ['গণেশ চতুর্থী'],
+      '09-19': ['রাধাষ্টমী'],
+      '10-10': ['মহালয়া'],
+      '10-15': ['মহাচতুর্থী'],
+      '10-16': ['মহাপঞ্চমী'],
+      '10-17': ['মহাষষ্ঠী'],
+      '10-18': ['মহাসপ্তমী'],
+      '10-19': ['মহাষ্টমী'],
+      '10-20': ['মহানবমী'],
+      '10-21': ['বিজয়া দশমী'],
+      '10-25': ['কোজাগরী লক্ষ্মীপূজা'],
+      '11-06': ['ধনতেরাস'],
+      '11-07': ['ভূত চতুর্দশী'],
+      '11-08': ['কালীপূজা ও দীপাবলি'],
+      '11-11': ['ভাইফোঁটা'],
+      '11-15': ['ছট পূজা'],
+      '11-18': ['জগদ্ধাত্রী পূজা'],
+      '11-24': ['রাস পূর্ণিমা'],
+    },
+    2027: {
+      '02-11': ['সরস্বতী পূজা'],
+      '02-20': ['মাঘী পূর্ণিমা'],
+      '03-06': ['মহাশিবরাত্রি'],
+      '03-22': ['দোলযাত্রা'],
+      '04-12': ['অশোক ষষ্ঠী'],
+      '04-13': ['বাসন্তী পূজা'],
+      '04-14': ['অন্নপূর্ণা পূজা'],
+      '04-15': ['রাম নবমী'],
+      '04-20': ['হনুমান জয়ন্তী'],
+    },
+  };
+
+  /// যাচাই করা তালিকার উৎসবের জন্য আইকন
+  static const Map<String, String> _festivalIcons = {
+    'রটন্তী কালীপূজা': '🌺',
+    'সরস্বতী পূজা': '🌼',
+    'মহাশিবরাত্রি': '🕉',
+    'দোলযাত্রা': '🌕',
+    'হনুমান জয়ন্তী': '🐒',
+    'অক্ষয় তৃতীয়া': '💰',
+    'বুদ্ধ পূর্ণিমা': '☸️',
+    'ফলহারিণী কালীপূজা': '🌺',
+    'জামাইষষ্ঠী': '🍲',
+    'দশহরা ও গঙ্গা পূজা': '🌊',
+    'রথযাত্রা': '🛕',
+    'বিপত্তারিণী পূজা': '🧵',
+    'উল্টোরথ': '🛕',
+    'গুরু পূর্ণিমা': '📿',
+    'রাখি পূর্ণিমা': '🎗️',
+    'জন্মাষ্টমী': '🦚',
+    'কৌশিকী অমাবস্যা': '🌑',
+    'গণেশ চতুর্থী': '🐘',
+    'রাধাষ্টমী': '🌸',
+    'মহালয়া': '🪔',
+    'মহাচতুর্থী': '🔱',
+    'মহাপঞ্চমী': '🔱',
+    'মহাষষ্ঠী': '🔱',
+    'মহাসপ্তমী': '🔱',
+    'মহাষ্টমী': '🔱',
+    'মহানবমী': '🔱',
+    'বিজয়া দশমী': '🔱',
+    'কোজাগরী লক্ষ্মীপূজা': '🪷',
+    'ধনতেরাস': '🪙',
+    'ভূত চতুর্দশী': '🪔',
+    'কালীপূজা ও দীপাবলি': '🪔',
+    'ভাইফোঁটা': '🎗️',
+    'ছট পূজা': '🌅',
+    'জগদ্ধাত্রী পূজা': '🦁',
+    'রাস পূর্ণিমা': '🌕',
+    'মাঘী পূর্ণিমা': '🌕',
+    'অশোক ষষ্ঠী': '🌿',
+    'বাসন্তী পূজা': '🔱',
+    'অন্নপূর্ণা পূজা': '🍚',
+    'রাম নবমী': '🛕',
+  };
+
+  /// তিথি-ভিত্তিক উৎসবের নিয়ম — যে বছরের তারিখ [_verifiedFestivals]-এ
+  /// নেই, সেই বছরের জন্য এখান থেকেই উৎসব বেরিয়ে আসে।
+  ///
+  /// গুরুত্বপূর্ণ: এখানে মাসের নাম **চান্দ্র মাস** (পূর্ণিমান্ত), সৌর মাস
+  /// নয় — ছাপা পঞ্জিকা এভাবেই উৎসবের মাস ধরে। আগে সৌর মাস ধরা হতো,
+  /// তাতে দুর্গাপূজার ষষ্ঠী-সপ্তমী অক্টোবরে বাদ পড়ে যেত আর গোটা পূজা
+  /// নভেম্বরে আবার দেখাত।
   static const List<_FestivalRule> _festivalRules = [
     // within: ০ = প্রতিপদ … ১৩ = চতুর্দশী, ১৪ = পূর্ণিমা (শুক্ল) / অমাবস্যা (কৃষ্ণ)
+    _FestivalRule('বৈশাখ', 'শুক্ল', 2, 'অক্ষয় তৃতীয়া', 'general', '💰'),
+    _FestivalRule('বৈশাখ', 'শুক্ল', 14, 'বুদ্ধ পূর্ণিমা', 'general', '☸️'),
+    _FestivalRule('জ্যৈষ্ঠ', 'শুক্ল', 5, 'জামাইষষ্ঠী', 'general', '🍲'),
+    _FestivalRule('জ্যৈষ্ঠ', 'শুক্ল', 9, 'দশহরা ও গঙ্গা পূজা', 'general', '🌊'),
     _FestivalRule('আষাঢ়', 'শুক্ল', 1, 'রথযাত্রা', 'general', '🛕'),
-    _FestivalRule('শ্রাবণ', 'শুক্ল', 9, 'উল্টোরথ', 'general', '🛕'),
-    _FestivalRule('ভাদ্র', 'শুক্ল', 14, 'রাখি পূর্ণিমা', 'general', '🎗️'),
+    _FestivalRule('আষাঢ়', 'শুক্ল', 9, 'উল্টোরথ', 'general', '🛕'),
+    _FestivalRule('আষাঢ়', 'শুক্ল', 14, 'গুরু পূর্ণিমা', 'general', '📿'),
+    _FestivalRule('শ্রাবণ', 'শুক্ল', 14, 'রাখি পূর্ণিমা', 'general', '🎗️'),
     _FestivalRule('ভাদ্র', 'কৃষ্ণ', 7, 'জন্মাষ্টমী', 'general', '🦚'),
+    _FestivalRule('ভাদ্র', 'কৃষ্ণ', 14, 'কৌশিকী অমাবস্যা', 'general', '🌑'),
     _FestivalRule('ভাদ্র', 'শুক্ল', 3, 'গণেশ চতুর্থী', 'general', '🐘'),
+    _FestivalRule('ভাদ্র', 'শুক্ল', 7, 'রাধাষ্টমী', 'general', '🌸'),
     _FestivalRule('আশ্বিন', 'কৃষ্ণ', 14, 'মহালয়া', 'general', '🪔'),
-    _FestivalRule('কার্তিক', 'শুক্ল', 5, 'মহাষষ্ঠী', 'general', '🔱'),
-    _FestivalRule('কার্তিক', 'শুক্ল', 6, 'মহাসপ্তমী', 'general', '🔱'),
-    _FestivalRule('কার্তিক', 'শুক্ল', 7, 'মহাষ্টমী', 'general', '🔱'),
-    _FestivalRule('কার্তিক', 'শুক্ল', 8, 'মহানবমী', 'general', '🔱'),
-    _FestivalRule('কার্তিক', 'শুক্ল', 9, 'বিজয়া দশমী', 'general', '🔱'),
     _FestivalRule(
-      'কার্তিক',
+      'আশ্বিন',
+      'শুক্ল',
+      3,
+      'মহাচতুর্থী',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'আশ্বিন',
+      'শুক্ল',
+      4,
+      'মহাপঞ্চমী',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'আশ্বিন',
+      'শুক্ল',
+      5,
+      'মহাষষ্ঠী',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'আশ্বিন',
+      'শুক্ল',
+      6,
+      'মহাসপ্তমী',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'আশ্বিন',
+      'শুক্ল',
+      7,
+      'মহাষ্টমী',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'আশ্বিন',
+      'শুক্ল',
+      8,
+      'মহানবমী',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'আশ্বিন',
+      'শুক্ল',
+      9,
+      'বিজয়া দশমী',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'আশ্বিন',
       'শুক্ল',
       14,
       'কোজাগরী লক্ষ্মীপূজা',
       'general',
       '🪷',
+      ref: 'nishita',
     ),
     _FestivalRule(
       'কার্তিক',
@@ -14325,14 +15900,44 @@ class BengaliCalendarData {
     _FestivalRule(
       'কার্তিক',
       'কৃষ্ণ',
+      13,
+      'ভূত চতুর্দশী',
+      'general',
+      '🪔',
+      ref: 'pradosh',
+    ),
+    _FestivalRule(
+      'কার্তিক',
+      'কৃষ্ণ',
       14,
-      'কালীপূজা / দীপাবলি',
+      'কালীপূজা ও দীপাবলি',
       'general',
       '🪔',
       ref: 'nishita',
     ),
-    _FestivalRule('কার্তিক', 'শুক্ল', 1, 'ভাইফোঁটা', 'general', '🎗️'),
+    _FestivalRule(
+      'কার্তিক',
+      'শুক্ল',
+      1,
+      'ভাইফোঁটা',
+      'general',
+      '🎗️',
+      ref: 'last',
+    ),
+    _FestivalRule('কার্তিক', 'শুক্ল', 5, 'ছট পূজা', 'general', '🌅'),
+    _FestivalRule(
+      'কার্তিক',
+      'শুক্ল',
+      8,
+      'জগদ্ধাত্রী পূজা',
+      'general',
+      '🦁',
+      ref: 'last',
+    ),
+    _FestivalRule('কার্তিক', 'শুক্ল', 14, 'রাস পূর্ণিমা', 'general', '🌕'),
     _FestivalRule('মাঘ', 'শুক্ল', 4, 'সরস্বতী পূজা', 'general', '🌼'),
+    _FestivalRule('মাঘ', 'কৃষ্ণ', 13, 'রটন্তী কালীপূজা', 'general', '🌺'),
+    _FestivalRule('মাঘ', 'শুক্ল', 14, 'মাঘী পূর্ণিমা', 'general', '🌕'),
     _FestivalRule(
       'ফাল্গুন',
       'কৃষ্ণ',
@@ -14343,7 +15948,35 @@ class BengaliCalendarData {
       ref: 'nishita',
     ),
     _FestivalRule('ফাল্গুন', 'শুক্ল', 14, 'দোলযাত্রা', 'general', '🌕'),
-    _FestivalRule('চৈত্র', 'শুক্ল', 8, 'রাম নবমী', 'general', '🛕'),
+    _FestivalRule('চৈত্র', 'শুক্ল', 5, 'অশোক ষষ্ঠী', 'general', '🌿'),
+    _FestivalRule(
+      'চৈত্র',
+      'শুক্ল',
+      6,
+      'বাসন্তী পূজা',
+      'general',
+      '🔱',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'চৈত্র',
+      'শুক্ল',
+      7,
+      'অন্নপূর্ণা পূজা',
+      'general',
+      '🍚',
+      ref: 'last',
+    ),
+    _FestivalRule(
+      'চৈত্র',
+      'শুক্ল',
+      8,
+      'রাম নবমী',
+      'general',
+      '🛕',
+      ref: 'last',
+    ),
+    _FestivalRule('চৈত্র', 'শুক্ল', 14, 'হনুমান জয়ন্তী', 'general', '🐒'),
   ];
 
   /// প্রতি বছরই একই ইংরেজি তারিখে পড়ে এমন দিন (মাস-দিন অনুযায়ী)
@@ -14378,47 +16011,191 @@ class BengaliCalendarData {
     'রেবতী',
   };
 
-  static CalendarEvent? _auspiciousFor(
+  /// প্রতিটা কাজের নিজস্ব নিয়ম — প্রথাগত পঞ্জিকার অনুসরণে।
+  ///
+  /// আগে সব কাজের জন্য একটাই নিয়ম ছিল, আর কোন দিন কোন কাজের সেটা ঠিক
+  /// হতো `তারিখ % ৮` দিয়ে — অর্থাৎ ইংরেজি তারিখের ভাগশেষ দিয়ে, যার
+  /// সঙ্গে শাস্ত্রের কোনো সম্পর্ক নেই। তাতে বিবাহের জন্য বছরে মাত্র
+  /// ৪-৬টা দিন পাওয়া যেত, যেখানে ছাপা পঞ্জিকায় ২০-৩০টা থাকে।
+  ///
+  /// এখন প্রতিটা কাজের জন্য আলাদা নক্ষত্র, তিথি ও বার ধরা হয়। একই দিন
+  /// একাধিক কাজের জন্য শুভ হতে পারে — বাস্তবেও তাই হয়।
+  ///
+  /// ⚠️ এটি প্রচলিত নিয়মের সরল রূপ — প্রকৃত লগ্ন ও কোষ্ঠী বিচারের বিকল্প
+  /// নয়। গুরুত্বপূর্ণ কাজে পুরোহিত/জ্যোতিষীর সঙ্গে মিলিয়ে নেওয়া উচিত।
+  static const Map<String, _ShubhoRule> _shubhoRules = {
+    'marriage': _ShubhoRule(
+      'বিবাহের শুভ দিন',
+      '💍',
+      {
+        'রোহিণী',
+        'মৃগশিরা',
+        'মঘা',
+        'উত্তরফাল্গুনী',
+        'হস্তা',
+        'স্বাতী',
+        'অনুরাধা',
+        'মূলা',
+        'উত্তরাষাঢ়া',
+        'উত্তরভাদ্রপদ',
+        'রেবতী',
+      },
+      {1, 2, 4, 6, 9, 10, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+    'griha': _ShubhoRule(
+      'গৃহপ্রবেশের শুভ দিন',
+      '🏠',
+      {
+        'রোহিণী',
+        'মৃগশিরা',
+        'চিত্রা',
+        'অনুরাধা',
+        'উত্তরফাল্গুনী',
+        'উত্তরাষাঢ়া',
+        'উত্তরভাদ্রপদ',
+        'রেবতী',
+        'শতভিষা',
+      },
+      {1, 2, 4, 6, 9, 10, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+    'annaprashan': _ShubhoRule(
+      'অন্নপ্রাশনের শুভ দিন',
+      '👶',
+      {
+        'অশ্বিনী',
+        'রোহিণী',
+        'মৃগশিরা',
+        'পুনর্বসু',
+        'পুষ্যা',
+        'হস্তা',
+        'চিত্রা',
+        'স্বাতী',
+        'অনুরাধা',
+        'শ্রবণা',
+        'রেবতী',
+      },
+      {1, 2, 4, 6, 9, 10, 11, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+    'byabosha': _ShubhoRule(
+      'ব্যবসা শুরুর শুভ দিন',
+      '🪔',
+      {
+        'অশ্বিনী',
+        'রোহিণী',
+        'মৃগশিরা',
+        'পুষ্যা',
+        'উত্তরফাল্গুনী',
+        'হস্তা',
+        'চিত্রা',
+        'অনুরাধা',
+        'উত্তরাষাঢ়া',
+        'ধনিষ্ঠা',
+        'রেবতী',
+      },
+      {1, 2, 4, 6, 9, 10, 11, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+    'namakaran': _ShubhoRule(
+      'নামকরণের শুভ দিন',
+      '📿',
+      {
+        'অশ্বিনী',
+        'রোহিণী',
+        'মৃগশিরা',
+        'পুনর্বসু',
+        'পুষ্যা',
+        'হস্তা',
+        'চিত্রা',
+        'স্বাতী',
+        'অনুরাধা',
+        'শ্রবণা',
+        'ধনিষ্ঠা',
+        'রেবতী',
+      },
+      {1, 2, 4, 6, 9, 10, 11, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+    'jomi': _ShubhoRule(
+      'জমি কেনার শুভ দিন',
+      '🏞️',
+      {
+        'রোহিণী',
+        'মৃগশিরা',
+        'উত্তরফাল্গুনী',
+        'হস্তা',
+        'অনুরাধা',
+        'উত্তরাষাঢ়া',
+        'উত্তরভাদ্রপদ',
+        'ধনিষ্ঠা',
+        'রেবতী',
+      },
+      {1, 2, 4, 9, 10, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+    'bari': _ShubhoRule(
+      'বাড়ি কেনার শুভ দিন',
+      '🏡',
+      {
+        'রোহিণী',
+        'মৃগশিরা',
+        'চিত্রা',
+        'অনুরাধা',
+        'উত্তরফাল্গুনী',
+        'উত্তরাষাঢ়া',
+        'উত্তরভাদ্রপদ',
+        'রেবতী',
+      },
+      {1, 2, 4, 6, 9, 10, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+    'gari': _ShubhoRule(
+      'গাড়ি কেনার শুভ দিন',
+      '🚗',
+      {
+        'অশ্বিনী',
+        'রোহিণী',
+        'মৃগশিরা',
+        'পুনর্বসু',
+        'পুষ্যা',
+        'হস্তা',
+        'চিত্রা',
+        'স্বাতী',
+        'অনুরাধা',
+        'শ্রবণা',
+        'ধনিষ্ঠা',
+        'রেবতী',
+      },
+      {1, 2, 4, 6, 9, 10, 11, 12},
+      {DateTime.monday, DateTime.wednesday, DateTime.thursday, DateTime.friday},
+    ),
+  };
+
+  /// একটা দিন যে যে কাজের জন্য শুভ, তার সবগুলো। কৃষ্ণপক্ষেও অনেক কাজ
+  /// প্রচলিতভাবে করা হয় (বিশেষত প্রথম দিকের তিথিতে), তাই শুধু শুক্লপক্ষে
+  /// আটকে রাখা হয়নি — তবে অমাবস্যা ও কয়েকটি বর্জিত তিথি বাদ থাকে।
+  static List<CalendarEvent> _auspiciousAll(
     DateTime date,
     TithiInfo tithi,
     String nakshatra,
   ) {
-    if (tithi.paksha != 'শুক্ল') return null;
-    if (!_auspiciousTithis.contains(tithi.index % 15)) return null;
-    if (!_auspiciousNakshatras.contains(nakshatra)) return null;
-    if (date.weekday == DateTime.tuesday) return null;
-    // একই নিয়মে পড়া দিনগুলোকে আটটা ভাগে ভাগ করা হয় (বিবাহ/গৃহপ্রবেশ/
-    // অন্নপ্রাশন/ব্যবসা শুরু/নামকরণ/জমি কেনা/বাড়ি কেনা/গাড়ি কেনা) যাতে
-    // প্রতিটি কাজের জন্য আলাদা আলাদা বাস্তবসম্মত সংখ্যক শুভ দিন দেখা যায়।
-    // ("শুভ মুহূর্ত" ফিচারে জমি/বাড়ি/গাড়ি কেনার ৩টা নতুন ভাগ যোগ হওয়ায়
-    // আগের mod-5 থেকে mod-8 করা হলো — এটা এখনো একটা সরলীকৃত ইঙ্গিতমাত্র,
-    // প্রকৃত লগ্ন-বিচারের বিকল্প নয়)
-    switch (date.day % 8) {
-      case 0:
-        return const CalendarEvent('বিবাহের শুভ দিন', 'marriage', icon: '💍');
-      case 1:
-        return const CalendarEvent('গৃহপ্রবেশের শুভ দিন', 'griha', icon: '🏠');
-      case 2:
-        return const CalendarEvent(
-          'অন্নপ্রাশনের শুভ দিন',
-          'annaprashan',
-          icon: '👶',
-        );
-      case 3:
-        return const CalendarEvent(
-          'ব্যবসা শুরুর শুভ দিন',
-          'byabosha',
-          icon: '🪔',
-        );
-      case 4:
-        return const CalendarEvent('নামকরণের শুভ দিন', 'namakaran', icon: '📿');
-      case 5:
-        return const CalendarEvent('জমি কেনার শুভ দিন', 'jomi', icon: '🏞️');
-      case 6:
-        return const CalendarEvent('বাড়ি কেনার শুভ দিন', 'bari', icon: '🏡');
-      default:
-        return const CalendarEvent('গাড়ি কেনার শুভ দিন', 'gari', icon: '🚗');
-    }
+    final within = tithi.index % 15;
+    // অমাবস্যা, চতুর্থী, অষ্টমী, নবমী, চতুর্দশী — প্রচলিতভাবে বর্জিত
+    const avoid = {3, 7, 8, 13, 14};
+    if (avoid.contains(within)) return const [];
+    // কৃষ্ণপক্ষের শেষ দিকের তিথিও এড়ানো হয়
+    if (tithi.paksha != 'শুক্ল' && within > 10) return const [];
+
+    final out = <CalendarEvent>[];
+    _shubhoRules.forEach((cat, r) {
+      if (!r.nakshatras.contains(nakshatra)) return;
+      if (!r.tithis.contains(within)) return;
+      if (!r.weekdays.contains(date.weekday)) return;
+      out.add(CalendarEvent(r.label, cat, icon: r.icon));
+    });
+    return out;
   }
 
   /// "শুভ মুহূর্ত" ফিচারের জন্য — শুধু তারিখ না দিয়ে সেদিনের তিথি/নক্ষত্র/
@@ -14537,7 +16314,8 @@ class BengaliCalendarData {
     final sunrise = sun.sunrise;
     final tithi = PanchangCalculator.tithiFor(sunrise);
     final within = tithi.index % 15;
-    final monthName = BengaliDateUtil.monthInfoFor(day).name;
+    final monthInfo = BengaliDateUtil.monthInfoFor(day);
+    final monthName = monthInfo.name;
     final nakshatra = PanchangCalculator
         .nakshatraNames[PanchangCalculator.nakshatraIndexFor(sunrise)];
 
@@ -14557,10 +16335,60 @@ class BengaliCalendarData {
 
     bool hasLabel(String l) => out.any((e) => e.label == l);
 
-    for (final r in _festivalRules) {
-      if (r.month != monthName || hasLabel(r.label)) continue;
-      final t = r.ref == 'sunrise' ? tithi : tithiAtRef(r.ref);
-      if (r.paksha == t.paksha && r.within == t.index % 15) {
+    // ১) এই বছরের তারিখ ছাপা পঞ্জিকা/সরকারি ছুটির তালিকা মিলিয়ে যাচাই
+    //    করা থাকলে সেটাই চূড়ান্ত — ওই উৎসবগুলোর জন্য নিচের হিসেব আর
+    //    চালানো হয় না, তাই এক দিন এদিক-ওদিক হওয়ার সুযোগ থাকে না।
+    final verified = _verifiedFestivals[day.year];
+    final verifiedLabels = <String>{};
+    if (verified != null) {
+      for (final labels in verified.values) {
+        verifiedLabels.addAll(labels);
+      }
+      final md =
+          '${day.month.toString().padLeft(2, "0")}-${day.day.toString().padLeft(2, "0")}';
+      for (final label in verified[md] ?? const <String>[]) {
+        if (!hasLabel(label)) {
+          out.add(
+            CalendarEvent(label, 'general', icon: _festivalIcons[label] ?? '✦'),
+          );
+        }
+      }
+    }
+
+    // ২) বাকি বছর/উৎসবের জন্য তিথি-ভিত্তিক হিসেব। মাস মেলানো হয়
+    //    **চান্দ্রমাস** ধরে (পূর্ণিমান্ত), সৌর মাস ধরে নয়।
+    final lunarMonth = BengaliDateUtil.lunarMonthName(day, tithi);
+    final inAdhikaMasa = BengaliDateUtil.isAdhikaMasa(day, tithi);
+
+    /// তিথিটা আগামীকাল সূর্যোদয়ে আর থাকবে না — অর্থাৎ আজই শেষ সূর্যোদয়
+    bool isLastSunriseOfTithi() {
+      final next = PanchangCalculator.tithiFor(
+        PanchangCalculator.sunTimes(day.add(const Duration(days: 1))).sunrise,
+      );
+      return next.index != tithi.index;
+    }
+
+    if (!inAdhikaMasa) {
+      for (final r in _festivalRules) {
+        if (r.month != lunarMonth || hasLabel(r.label)) continue;
+        // এই বছরের তারিখ উপরে যাচাই করা তালিকা থেকে এসেছে — হিসেব নয়
+        if (verifiedLabels.contains(r.label)) continue;
+        if (r.ref == 'last' && !isLastSunriseOfTithi()) continue;
+        final t = (r.ref == 'sunrise' || r.ref == 'last')
+            ? tithi
+            : tithiAtRef(r.ref);
+        if (r.paksha == t.paksha && r.within == t.index % 15) {
+          out.add(CalendarEvent(r.label, r.category, icon: r.icon));
+        }
+      }
+    }
+
+    // মাসের শেষ দিনের উৎসব (বিশ্বকর্মা, চড়ক, মনসা…)
+    final daysToEnd = monthInfo.end.difference(day).inDays;
+    for (final r in _monthEndRules) {
+      if (r.month == monthName &&
+          r.fromEnd == daysToEnd &&
+          !hasLabel(r.label)) {
         out.add(CalendarEvent(r.label, r.category, icon: r.icon));
       }
     }
@@ -14581,10 +16409,8 @@ class BengaliCalendarData {
       }
     }
 
-    final auspicious = _auspiciousFor(day, tithi, nakshatra);
-    if (auspicious != null &&
-        !out.any((e) => e.category == auspicious.category)) {
-      out.add(auspicious);
+    for (final a in _auspiciousAll(day, tithi, nakshatra)) {
+      if (!out.any((e) => e.category == a.category)) out.add(a);
     }
 
     // একই নামের ইভেন্ট একাধিকবার এলে একবারই রাখা হয়
@@ -15146,6 +16972,347 @@ class _PanjikaArtPainter extends CustomPainter {
 // =====================================================================
 // বাংলা ক্যালেন্ডার পেজ
 // =====================================================================
+
+/// হোম স্ক্রিনের "আজকের রাশিফল" বাক্স।
+///
+/// ১২টা রাশির চিপ পাশাপাশি — একটায় ট্যাপ করলেই আজকের ফল বদলে যায়।
+/// ফলটা কোনো বসানো লেখা নয়: চাঁদ আজ প্রকৃতপক্ষে কোন রাশিতে আছে
+/// ([PanchangCalculator.rashiIndexFor]) সেটা বেছে নেওয়া রাশি থেকে কত
+/// নম্বর ঘরে পড়ছে বের করে ঐতিহ্যবাহী "চন্দ্র গোচর ফল" দেখানো হয়।
+/// চাঁদ প্রতি ~২.২৫ দিনে রাশি বদলায়, আর শুভ সংখ্যা/রং তিথি অনুযায়ী
+/// পাল্টায় — তাই প্রতিদিন সকালে অ্যাপ খুললে ফল নিজে থেকেই আলাদা।
+class _RashifalHomeCard extends StatefulWidget {
+  const _RashifalHomeCard();
+
+  @override
+  State<_RashifalHomeCard> createState() => _RashifalHomeCardState();
+}
+
+class _RashifalHomeCardState extends State<_RashifalHomeCard> {
+  int _selected = 0;
+  bool _fromSaved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSaved();
+  }
+
+  /// রাশি Intelligence পাতায় "আমার রাশি" সেভ করা থাকলে সেটাই আগে
+  /// দেখানো হয় — একই key, তাই দুই জায়গায় সবসময় মিলে যায়।
+  Future<void> _loadSaved() async {
+    final prefs = await SharedPreferences.getInstance();
+    final idx = prefs.getInt('rashi_intelligence_my_rashi');
+    if (!mounted || idx == null || idx < 0 || idx > 11) return;
+    setState(() {
+      _selected = idx;
+      _fromSaved = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final moonIdx = PanchangCalculator.rashiIndexFor(now);
+    final tithi = PanchangCalculator.tithiFor(now);
+
+    final house = (moonIdx - _selected + 12) % 12;
+    final theme = ContentData._gocharHouses[house][0];
+    final tag = ContentData._gocharHouses[house][1];
+    final luckyNum = ((tithi.index + _selected) % 9) + 1;
+    final luckyColor =
+        ContentData._luckyColors[(tithi.index + _selected) %
+            ContentData._luckyColors.length];
+
+    final Color tagColor = tag == 'শুভ'
+        ? const Color(0xFF6BD48E)
+        : (tag == 'সতর্কতা'
+              ? const Color(0xFFFF9E6B)
+              : const Color(0xFFBFC7DA));
+    final String tagIcon = tag == 'শুভ' ? '✅' : (tag == 'সতর্কতা' ? '⚠️' : '➖');
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1A1038), Color(0xFF0C1A33)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFE4B33C).withValues(alpha: 0.45),
+          width: 1.1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🔮', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'আজকের রাশিফল',
+                  style: TextStyle(
+                    color: Color(0xFFFFD36E),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RashiScreen()),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  child: Text(
+                    'বিস্তারিত ›',
+                    style: TextStyle(
+                      color: Color(0xFFFFD36E),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'চাঁদ এখন ${PanchangCalculator.rashiNames[moonIdx]} রাশিতে • '
+            '${tithi.paksha} পক্ষ, ${tithi.name}',
+            style: const TextStyle(color: Colors.white38, fontSize: 10.5),
+          ),
+          const SizedBox(height: 11),
+
+          // ১২টা রাশি — পাশে সরিয়ে দেখা যায়।
+          //
+          // আগে এখানে "BOTTOM OVERFLOWED" আসত: বাক্সের উচ্চতা স্থির ছিল,
+          // কিন্তু ফোনের সেটিংসে লেখার মাপ বড় করা থাকলে ভেতরের ইমোজি ও
+          // নাম মিলে ওই উচ্চতা ছাড়িয়ে যেত। এখন দুটো লেখাই Flexible +
+          // FittedBox-এর ভেতরে — জায়গা কম পড়লে নিজে থেকে একটু ছোট হয়ে
+          // বসে যায়, তাই লেখার মাপ যা-ই থাকুক কখনো উপচে পড়বে না।
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
+              itemCount: 12,
+              separatorBuilder: (_, _) => const SizedBox(width: 7),
+              itemBuilder: (_, i) {
+                final on = i == _selected;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(13),
+                  onTap: () => setState(() {
+                    _selected = i;
+                    _fromSaved = false;
+                  }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 58,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 7,
+                      horizontal: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: on
+                          ? const Color(0xFFE4B33C).withValues(alpha: 0.18)
+                          : Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(
+                        color: on
+                            ? const Color(0xFFFFD36E)
+                            : Colors.white.withValues(alpha: 0.09),
+                        width: on ? 1.3 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              ContentData._rashiSymbols[i],
+                              style: const TextStyle(fontSize: 19, height: 1.0),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              PanchangCalculator.rashiNames[i],
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: on
+                                    ? const Color(0xFFFFD36E)
+                                    : Colors.white70,
+                                fontSize: 10.5,
+                                height: 1.0,
+                                fontWeight: on
+                                    ? FontWeight.w800
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // বেছে নেওয়া রাশির আজকের ফল
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF08172F).withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: tagColor.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '${ContentData._rashiSymbols[_selected]} '
+                      '${PanchangCalculator.rashiNames[_selected]}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (_fromSaved) ...[
+                      const SizedBox(width: 6),
+                      const Text(
+                        '• আমার রাশি',
+                        style: TextStyle(
+                          color: Color(0xFFFFD36E),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: tagColor.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$tagIcon $tag',
+                        style: TextStyle(
+                          color: tagColor,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  theme,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12.5,
+                    height: 1.55,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _RashiFactChip(
+                        label: 'শুভ সংখ্যা',
+                        value: bnNum(luckyNum),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _RashiFactChip(label: 'শুভ রং', value: luckyColor),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _RashiFactChip(
+                        label: 'চন্দ্র ঘর',
+                        value: bnNum(house + 1),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RashiFactChip extends StatelessWidget {
+  final String label;
+  final String value;
+  const _RashiFactChip({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 9.5,
+                height: 1.1,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Color(0xFFFFD36E),
+                fontSize: 12.5,
+                height: 1.1,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _AllServicesHomeButton extends StatelessWidget {
   const _AllServicesHomeButton();
@@ -15712,10 +17879,7 @@ class TodaySmartScreen extends StatelessWidget {
                       if (anniversaries.isEmpty)
                         const Text(
                           'আজ তালিকায় কোনো মনীষীর জন্ম বা প্রয়াণ দিন নেই।',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
                         )
                       else
                         ...anniversaries.map((f) {
@@ -16296,7 +18460,7 @@ class _MonthSummaryScreenState extends State<MonthSummaryScreen> {
                 const SizedBox(height: 9),
                 if (rows.isEmpty)
                   const Text(
-                    'এই মাসে আলাদা কোনো event পাওয়া যায়নি।',
+                    'এই মাসে আলাদা কোনো অনুষ্ঠান পাওয়া যায়নি।',
                     style: TextStyle(color: Colors.white70),
                   )
                 else
@@ -16620,7 +18784,7 @@ class _PujaChecklistScreenState extends State<PujaChecklistScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '✅ পূজা Checklist'),
+          const _ScreenHeader(title: '✅ পূজা তালিকা'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
@@ -16808,7 +18972,7 @@ class _FavouriteDayScreenState extends State<FavouriteDayScreen> {
               context,
               c.text.trim().isEmpty ? 'প্রিয় দিন' : c.text.trim(),
             ),
-            child: const Text('Save'),
+            child: const Text('সেভ করুন'),
           ),
         ],
       ),
@@ -16828,7 +18992,7 @@ class _FavouriteDayScreenState extends State<FavouriteDayScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '❤️ Favourite Day'),
+          const _ScreenHeader(title: '❤️ প্রিয় দিন'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
@@ -16928,7 +19092,7 @@ class FestivalCountdownScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🏆 Festival Countdown'),
+          const _ScreenHeader(title: '🏆 উৎসব কত দিন পরে'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
@@ -17409,7 +19573,7 @@ class _PanchangOccasionDetailScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Reminder সেট হয়েছে • ${bnNum(when.day)} ${gregMonthBn(when.month)} ${bnTime12(when)}',
+          'রিমাইন্ডার সেট হয়েছে • ${bnNum(when.day)} ${gregMonthBn(when.month)} ${bnTime12(when)}',
         ),
       ),
     );
@@ -17428,7 +19592,7 @@ class _PanchangOccasionDetailScreenState
         ? ''
         : '\nবিশেষ দিন: ${events.map((e) => '${e.icon} ${e.label}').join(' • ')}';
 
-    Share.share(
+    shareFromApp(
       '🪷 $occasionName\n'
       '${bnNum(bengaliDay)} ${info.name} ${bnNum(info.year)} • '
       '${bnNum(widget.date.day)} ${gregMonthBn(widget.date.month)} ${bnNum(widget.date.year)}\n'
@@ -17752,7 +19916,7 @@ class _PanchangOccasionDetailScreenState
                             onPressed: () =>
                                 _setReminder(occasionName, timing, tithi.name),
                             icon: const Icon(Icons.alarm_add_rounded),
-                            label: const Text('Reminder'),
+                            label: const Text('মনে করানো'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -18059,14 +20223,14 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '${f.name} — ${bnNum(when.day)} ${gregMonthBn(when.month)} সকাল ৯টায় reminder',
+          '${f.name} — ${bnNum(when.day)} ${gregMonthBn(when.month)} সকাল ৯টায় রিমাইন্ডার',
         ),
       ),
     );
   }
 
   void _shareFigure(_HistoricalFigure f) {
-    Share.share(
+    shareFromApp(
       '${f.emoji} ${f.name}\n'
       '${f.role}\n'
       '${bnNum(f.day)} ${gregMonthBn(f.month)} • ${f.eventType}দিন\n\n'
@@ -18161,7 +20325,7 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
                         child: Text(
                           extract.isNotEmpty
                               ? extract
-                              : 'এই ব্যক্তিত্বের সংক্ষিপ্ত পরিচয় বর্তমানে local data-তে ${f.role} হিসেবে সংরক্ষিত আছে। Internet থাকলে যাচাই করা Wikipedia summary ও ছবি এখানে দেখা যাবে।',
+                              : 'এই ব্যক্তিত্বের সংক্ষিপ্ত পরিচয় বর্তমানে অ্যাপে রাখা data-তে ${f.role} হিসেবে সংরক্ষিত আছে। Internet থাকলে যাচাই করা Wikipedia summary ও ছবি এখানে দেখা যাবে।',
                           style: const TextStyle(
                             color: Colors.white70,
                             height: 1.55,
@@ -18200,7 +20364,7 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
                             label: Text(
                               _favourites.contains(f.name)
                                   ? 'Favourite'
-                                  : 'Save Favourite',
+                                  : 'প্রিয় তালিকায় রাখুন',
                             ),
                           ),
                           OutlinedButton.icon(
@@ -18208,7 +20372,7 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
                             icon: const Icon(
                               Icons.notifications_active_rounded,
                             ),
-                            label: const Text('Reminder'),
+                            label: const Text('মনে করানো'),
                           ),
                           OutlinedButton.icon(
                             onPressed: () => _shareFigure(f),
@@ -18227,13 +20391,13 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
                                 }
                               },
                               icon: const Icon(Icons.open_in_new_rounded),
-                              label: const Text('Source'),
+                              label: const Text('সূত্র'),
                             ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'নোট: জীবনী/ছবি Wikipedia/Wikimedia থেকে online load হতে পারে। App কোনো AI-generated biography ব্যবহার করে না।',
+                        'নোট: জীবনী/ছবি Wikipedia/Wikimedia থেকে ইন্টারনেট থেকে আসতে হতে পারে। অ্যাপ কোনো AI-generated biography ব্যবহার করে না।',
                         style: TextStyle(
                           color: Colors.white38,
                           fontSize: 10.5,
@@ -18541,7 +20705,7 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'এই তারিখে local তালিকায় কোনো সংরক্ষিত জন্ম/প্রয়াণ তথ্য নেই। অন্য তারিখ বাছুন বা “মহাপুরুষ সংগ্রহ” খুলুন।',
+                    'এই তারিখে অ্যাপের তালিকায় কোনো সংরক্ষিত জন্ম/প্রয়াণ তথ্য নেই। অন্য তারিখ বাছুন বা “মহাপুরুষ সংগ্রহ” খুলুন।',
                     style: TextStyle(
                       color: Colors.white60,
                       fontSize: 11.5,
@@ -18554,23 +20718,23 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
           )
         else
           ...figures.map((f) => _figureCard(f)),
-        const SizedBox(height: 16),
-        const Text(
-          'আজকের/এই দিনের ঐতিহাসিক তথ্য',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w900,
-            fontSize: 15,
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (events.isEmpty)
+        // ঐতিহাসিক ঘটনার তালিকা হাতে বাছাই করা, তাই সব তারিখে থাকে না।
+        // ঘটনা না থাকলে আগে "এখনো যোগ করা হয়নি" লেখা দেখাত —
+        // অসমাপ্ত মনে হতো। এখন গোটা অংশটাই লুকানো থাকে,
+        // উপরের জন্ম-প্রয়াণের তালিকাই দেখায়।
+        if (events.isNotEmpty) ...[
+          const SizedBox(height: 16),
           const Text(
-            'এই তারিখের জন্য curated historical event এখনো যোগ করা হয়নি।',
-            style: TextStyle(color: Colors.white54, fontSize: 11.5),
-          )
-        else
+            'আজকের/এই দিনের ঐতিহাসিক তথ্য',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 8),
           ...events.map(_eventCard),
+        ],
       ],
     );
   }
@@ -18596,18 +20760,22 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
         const SizedBox(height: 10),
         Row(
           children: [
-            Text(
-              'মহাপুরুষ সংগ্রহ • ${bnNum(rows.length)} জন',
-              style: const TextStyle(
-                color: Color(0xFFFFD36E),
-                fontWeight: FontWeight.w900,
-                fontSize: 14,
+            Expanded(
+              child: Text(
+                'মহাপুরুষ সংগ্রহ • ${bnNum(rows.length)} জন',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFFFFD36E),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
               ),
             ),
-            const Spacer(),
             if (_favourites.isNotEmpty)
               Text(
-                '⭐ ${bnNum(_favourites.length)} saved',
+                '⭐ ${bnNum(_favourites.length)} প্রিয়',
+                maxLines: 1,
                 style: const TextStyle(color: Colors.white54, fontSize: 10.5),
               ),
           ],
@@ -18671,7 +20839,7 @@ class _TodayHistoryScreenState extends State<TodayHistoryScreen> {
                     ),
                   ),
                   child: const Text(
-                    'তথ্যনীতি: জন্ম/প্রয়াণ তারিখ local curated তালিকা থেকে আসে। ছবি ও সংক্ষিপ্ত জীবনী internet থাকলে Wikipedia/Wikimedia থেকে load হয় এবং source link দেখানো হয়। AI ব্যবহার করা হয় না।',
+                    'তথ্যনীতি: জন্ম/প্রয়াণ তারিখ অ্যাপে রাখা curated তালিকা থেকে আসে। ছবি ও সংক্ষিপ্ত জীবনী internet থাকলে Wikipedia/Wikimedia থেকে আসতে হয় এবং source link দেখানো হয়। AI ব্যবহার করা হয় না।',
                     style: TextStyle(
                       color: Colors.white54,
                       fontSize: 10.5,
@@ -18745,7 +20913,7 @@ class HomeWidgetInfoScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '📱 Home Widget'),
+          const _ScreenHeader(title: '📱 হোম স্ক্রিন উইজেট'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 170, 16, 30),
@@ -18763,7 +20931,7 @@ class HomeWidgetInfoScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'ফোনের Home Screen-এ বাংলা তারিখ ও তিথি',
+                        'ফোনের হোম স্ক্রিন-এ বাংলা তারিখ ও তিথি',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontWeight: FontWeight.w800,
@@ -18772,7 +20940,7 @@ class HomeWidgetInfoScreen extends StatelessWidget {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'ফোনের Home Screen-এ long-press করুন → Widgets → বাংলা পঞ্জিকা widget নির্বাচন করুন।',
+                        'ফোনের হোম স্ক্রিনে ফাঁকা জায়গায় চেপে ধরে রাখুন → উইজেট → "বাংলা পঞ্জিকা" বেছে নিন।',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
@@ -18789,12 +20957,12 @@ class HomeWidgetInfoScreen extends StatelessWidget {
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Widget data refresh করা হয়েছে'),
+                        content: Text('উইজেটের তথ্য নতুন করা হয়েছে'),
                       ),
                     );
                   },
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Widget data refresh করুন'),
+                  label: const Text('উইজেটের তথ্য নতুন করুন'),
                 ),
               ],
             ),
@@ -18941,7 +21109,7 @@ class _SearchScreenState extends State<SearchScreen> {
           elevation: 0,
           foregroundColor: Colors.white,
           title: const Text(
-            '🔎 Smart Calendar Search',
+            '🔎 ক্যালেন্ডারে খুঁজুন',
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
         ),
@@ -19011,7 +21179,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       : _results.isEmpty
                       ? const Center(
                           child: Text(
-                            'কোনো matching দিন পাওয়া যায়নি',
+                            'উপযুক্ত কোনো দিন পাওয়া যায়নি',
                             style: TextStyle(
                               color: Colors.white70,
                               fontSize: 13,
@@ -19401,7 +21569,7 @@ class _LiveMuhurtaRadarScreenState extends State<LiveMuhurtaRadarScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '📡 Live Muhurta Radar'),
+          const _ScreenHeader(title: '📡 চলতি মুহূর্ত'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
@@ -19537,6 +21705,15 @@ class BestDayFinderScreen extends StatefulWidget {
 }
 
 class _BestDayFinderScreenState extends State<BestDayFinderScreen> {
+  /// দিনটি আর কত দিন পরে — "আর ১২ দিন পরে" জাতীয় লেখা
+  String _kotoDin(DateTime d) {
+    final now = DateTime.now();
+    final left = d.difference(DateTime(now.year, now.month, now.day)).inDays;
+    if (left <= 0) return '📌 আজই';
+    if (left == 1) return '📌 আগামীকাল';
+    return '📌 আর ${bnNum(left)} দিন পরে';
+  }
+
   String _category = 'marriage';
 
   static const Map<String, (String, String)> _categories = {
@@ -19575,7 +21752,7 @@ class _BestDayFinderScreenState extends State<BestDayFinderScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🎯 Best Day Finder'),
+          const _ScreenHeader(title: '🎯 শুভ দিন খুঁজুন'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
@@ -19640,7 +21817,7 @@ class _BestDayFinderScreenState extends State<BestDayFinderScreen> {
                 if (results.isEmpty)
                   _glass(
                     const Text(
-                      'আগামী এক বছরে matching দিন পাওয়া যায়নি।',
+                      'আগামী এক বছরে এই কাজের উপযুক্ত দিন পাওয়া যায়নি।',
                       style: TextStyle(color: Colors.white70),
                     ),
                   )
@@ -19718,6 +21895,27 @@ class _BestDayFinderScreenState extends State<BestDayFinderScreen> {
                               fontSize: 11.5,
                             ),
                           ),
+                          const SizedBox(height: 6),
+                          // শুধু তারিখ নয় — দিনটি কেন শুভ সেটাও
+                          Text(
+                            '✅ ${row['nakshatra']} নক্ষত্র, ${tithi.paksha} '
+                            '${tithi.name} ও ${PanchangCalculator.weekdayName(d)} '
+                            '— এই কাজের প্রশস্ত যোগ',
+                            style: const TextStyle(
+                              color: Color(0xFF9BE3BE),
+                              fontSize: 11,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            _kotoDin(d),
+                            style: const TextStyle(
+                              color: Color(0xFF9DD6FF),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                           const SizedBox(height: 5),
                           Text(
                             abhijitOk
@@ -19742,7 +21940,10 @@ class _BestDayFinderScreenState extends State<BestDayFinderScreen> {
                   }),
                 const SizedBox(height: 4),
                 const Text(
-                  'ℹ️ এই তালিকা app-এর existing তিথি/নক্ষত্র-ভিত্তিক সরলীকৃত ঐতিহ্যগত নিয়ম থেকে তৈরি; ব্যক্তিগত লগ্ন বা পূর্ণ জ্যোতিষ বিচার নয়।',
+                  'ℹ️ এই তালিকা প্রচলিত তিথি, নক্ষত্র ও বারের নিয়ম মিলিয়ে তৈরি — '
+                  'প্রতিটি কাজের জন্য আলাদা নিয়ম ধরা হয়েছে। তবে এটি ব্যক্তিগত '
+                  'কোষ্ঠী বা লগ্ন বিচার নয়। বিবাহের মতো বড় কাজে পুরোহিত বা '
+                  'জ্যোতিষীর সঙ্গে মিলিয়ে নেবেন।',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 10.3,
@@ -19929,7 +22130,7 @@ class _PanchangCompareScreenState extends State<PanchangCompareScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '⚖️ Panchang Day Compare'),
+          const _ScreenHeader(title: '⚖️ দুই দিনের তুলনা'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
@@ -19974,7 +22175,7 @@ class _PanchangCompareScreenState extends State<PanchangCompareScreen> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'ℹ️ স্কোরটি app-এর একটি সহজ “ঐতিহ্যভিত্তিক পঞ্জিকা সূচক” — শুক্ল/কৃষ্ণপক্ষ, বিদ্যমান শুভদিন event, অভিজিৎ প্রযোজ্যতা ও কিছু সাধারণ নিয়ম মিলিয়ে তুলনা করে। এটি জ্যোতিষীয় নিশ্চয়তা নয়।',
+                  'ℹ️ স্কোরটি app-এর একটি সহজ “ঐতিহ্যভিত্তিক পঞ্জিকা সূচক” — শুক্ল/কৃষ্ণপক্ষ, বিদ্যমান শুভদিন অনুষ্ঠান, অভিজিৎ প্রযোজ্যতা ও কিছু সাধারণ নিয়ম মিলিয়ে তুলনা করে। এটি জ্যোতিষীয় নিশ্চয়তা নয়।',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 10.4,
@@ -20036,7 +22237,7 @@ class FestivalHubScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🪔 Festival Super Hub'),
+          const _ScreenHeader(title: '🪔 উৎসবের ঘর'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
@@ -20379,7 +22580,7 @@ class _PanjikaVoiceAssistantScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🎙️ বাংলা Panjika Voice'),
+          const _ScreenHeader(title: '🎙️ বাংলা কথা বলে পঞ্জিকা'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
@@ -20632,7 +22833,7 @@ class _MorningBriefScreenState extends State<MorningBriefScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🌅 Personalized Morning Brief'),
+          const _ScreenHeader(title: '🌅 সকালের খবর'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
@@ -20688,9 +22889,9 @@ class _MorningBriefScreenState extends State<MorningBriefScreen> {
                           ),
                           const SizedBox(width: 8),
                           OutlinedButton.icon(
-                            onPressed: () => Share.share(
+                            onPressed: () => shareFromApp(
                               _briefText(),
-                              subject: 'আজকের Morning Brief',
+                              subject: 'আজকের সকালের খবর',
                             ),
                             icon: const Icon(Icons.share_rounded),
                             label: const Text('শেয়ার'),
@@ -20786,7 +22987,7 @@ class _FamilyUpcomingBoardScreenState extends State<FamilyUpcomingBoardScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '👨‍👩‍👧 Family Upcoming Board'),
+          const _ScreenHeader(title: '👨‍👩‍👧 পরিবারের বোর্ড'),
           Expanded(
             child: _loading
                 ? const Center(
@@ -20811,7 +23012,7 @@ class _FamilyUpcomingBoardScreenState extends State<FamilyUpcomingBoardScreen> {
                                 builder: (_) => const FamilyCalendarScreen(),
                               ),
                             ),
-                            child: const Text('Family Calendar খুলুন'),
+                            child: const Text('পরিবারের ক্যালেন্ডার খুলুন'),
                           ),
                         ],
                       ),
@@ -20983,7 +23184,7 @@ class _SmartAgendaScreenState extends State<SmartAgendaScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🗓️ Smart 30-Day Agenda'),
+          const _ScreenHeader(title: '🗓️ দিনের পরিকল্পনা'),
           Expanded(
             child: _loading
                 ? const Center(
@@ -20992,7 +23193,7 @@ class _SmartAgendaScreenState extends State<SmartAgendaScreen> {
                 : _items.isEmpty
                 ? const Center(
                     child: Text(
-                      'আগামী ৩০ দিনে কোনো saved item নেই',
+                      'আগামী ৩০ দিনে কোনো সেভ করা কিছু নেই',
                       style: TextStyle(color: Colors.white70),
                     ),
                   )
@@ -21357,8 +23558,8 @@ class _SmartNotificationDigestScreenState
       SnackBar(
         content: Text(
           (!_morning && !_evening)
-              ? 'Smart Digest বন্ধ করা হয়েছে'
-              : 'পরবর্তী ১৪ দিনের Smart Digest schedule হয়েছে',
+              ? 'দিনের সারসংক্ষেপ বন্ধ করা হয়েছে'
+              : 'পরবর্তী ১৪ দিনের দিনের সারসংক্ষেপ schedule হয়েছে',
         ),
       ),
     );
@@ -21381,14 +23582,14 @@ class _SmartNotificationDigestScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🔔 Smart Notification Digest'),
+          const _ScreenHeader(title: '🔔 দিনের সারসংক্ষেপ'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 _glass(
                   const Text(
-                    'প্রতিদিন প্রয়োজনীয় পঞ্জিকা তথ্য একসাথে নোটিফিকেশনে পাবেন। আলাদা আলাদা ১০টা alert নয় — একটি পরিষ্কার digest।',
+                    'প্রতিদিন প্রয়োজনীয় পঞ্জিকা তথ্য একসাথে নোটিফিকেশনে পাবেন। আলাদা আলাদা ১০টা সতর্কবার্তা নয় — একটি পরিষ্কার digest।',
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 13,
@@ -21450,7 +23651,7 @@ class _SmartNotificationDigestScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'আজকের Preview',
+                        'আজকের ঝলক',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontWeight: FontWeight.w800,
@@ -21478,7 +23679,7 @@ class _SmartNotificationDigestScreenState
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.notifications_active_rounded),
-                  label: const Text('Digest Save & Schedule'),
+                  label: const Text('সারসংক্ষেপ সেভ ও সময় ঠিক করুন'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFFFD36E),
                     foregroundColor: const Color(0xFF071428),
@@ -21540,8 +23741,16 @@ class _ShubhoAlarmScreenState extends State<ShubhoAlarmScreen> {
     return a['start'] as DateTime?;
   }
 
+  /// [_timeForType] পঞ্চাঙ্গ ইঞ্জিনের IST-marked সময় দেয় — সেটা সরাসরি
+  /// অ্যালার্মে বসালে ৫:৩০ দেরিতে বাজত, ঠিক "সন্ধ্যা প্রদীপ" বাগটার
+  /// মতোই। তাই শিডিউল/প্রদর্শনের আগে প্রকৃত মুহূর্তে আনা হয়।
+  DateTime? _alarmTimeForType(String type) {
+    final raw = _timeForType(type);
+    return raw == null ? null : panchangInstant(raw);
+  }
+
   Future<void> _schedule() async {
-    final target = _timeForType(_type);
+    final target = _alarmTimeForType(_type);
     if (target == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('এই দিনে অভিজিৎ মুহূর্ত প্রযোজ্য নয়')),
@@ -21590,11 +23799,11 @@ class _ShubhoAlarmScreenState extends State<ShubhoAlarmScreen> {
   Widget build(BuildContext context) {
     final info = BengaliDateUtil.monthInfoFor(_date);
     final bday = _date.difference(info.start).inDays + 1;
-    final target = _timeForType(_type);
+    final target = _alarmTimeForType(_type);
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '⏰ Shubho Alarm'),
+          const _ScreenHeader(title: '⏰ শুভ অ্যালার্ম'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
@@ -21642,7 +23851,7 @@ class _ShubhoAlarmScreenState extends State<ShubhoAlarmScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'কোন সময়ে alert চান?',
+                        'কোন সময়ে সতর্কবার্তা চান?',
                         style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w800,
@@ -21817,7 +24026,7 @@ class _SadhanaStreakScreenState extends State<SadhanaStreakScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🔥 Sadhana Streak'),
+          const _ScreenHeader(title: '🔥 সাধনার ধারা'),
           Expanded(
             child: _loading
                 ? const Center(
@@ -22105,7 +24314,7 @@ class _FamilyOccasionAssistantScreenState
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('আগের দিন সকাল ৯টার reminder সেট হয়েছে')),
+      const SnackBar(content: Text('আগের দিন সকাল ৯টার রিমাইন্ডার সেট হয়েছে')),
     );
   }
 
@@ -22128,7 +24337,7 @@ class _FamilyOccasionAssistantScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🎁 Family Occasion Assistant'),
+          const _ScreenHeader(title: '🎁 পারিবারিক অনুষ্ঠান সহায়ক'),
           Expanded(
             child: _loading
                 ? const Center(
@@ -22147,7 +24356,7 @@ class _FamilyOccasionAssistantScreenState
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'Family Calendar-এ আগে একটি জন্মদিন/বার্ষিকী যোগ করুন।',
+                            'পরিবারের ক্যালেন্ডার-এ আগে একটি জন্মদিন/বার্ষিকী যোগ করুন।',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white70,
@@ -22162,7 +24371,7 @@ class _FamilyOccasionAssistantScreenState
                                 builder: (_) => const FamilyCalendarScreen(),
                               ),
                             ),
-                            child: const Text('Family Calendar খুলুন'),
+                            child: const Text('পরিবারের ক্যালেন্ডার খুলুন'),
                           ),
                         ],
                       ),
@@ -22234,7 +24443,7 @@ class _FamilyOccasionAssistantScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Smart Preparation Checklist',
+                                'প্রস্তুতির তালিকা',
                                 style: TextStyle(
                                   color: Color(0xFFFFD36E),
                                   fontWeight: FontWeight.w800,
@@ -22264,7 +24473,7 @@ class _FamilyOccasionAssistantScreenState
                         ElevatedButton.icon(
                           onPressed: _remind,
                           icon: const Icon(Icons.notifications_active_rounded),
-                          label: const Text('আগের দিন Reminder সেট করুন'),
+                          label: const Text('আগের দিন রিমাইন্ডার সেট করুন'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFFFD36E),
                             foregroundColor: const Color(0xFF071428),
@@ -22423,7 +24632,7 @@ class _Phase5HomeCommandCenter extends StatelessWidget {
               _action(
                 context,
                 icon: '🎙️',
-                title: 'বাংলা Voice',
+                title: 'বাংলা ভয়েস',
                 subtitle: 'প্রশ্ন করুন',
                 page: const PanjikaVoiceAssistantScreen(),
               ),
@@ -22431,7 +24640,7 @@ class _Phase5HomeCommandCenter extends StatelessWidget {
                 context,
                 icon: '🔔',
                 title: 'Reminder Center',
-                subtitle: 'সব alert এক জায়গায়',
+                subtitle: 'সব সতর্কবার্তা এক জায়গায়',
                 page: const SmartReminderCenterScreen(),
               ),
             ],
@@ -22495,7 +24704,7 @@ class _Phase5FestivalPulseCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Festival Live',
+                        'উৎসবের সাজ',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 10.5,
@@ -22583,7 +24792,7 @@ class _Phase5FestivalPulseCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Text(
-                  'পূর্ণ Festival Mode খুলুন',
+                  'পূর্ণ উৎসবের সাজ খুলুন',
                   style: TextStyle(
                     color: Color(0xFFFFD36E),
                     fontSize: 10.5,
@@ -22651,7 +24860,7 @@ class FestivalLiveModeScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🪔 Festival Live Mode'),
+          const _ScreenHeader(title: '🪔 উৎসবের সাজ'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(15, 8, 15, 28),
@@ -22718,7 +24927,7 @@ class FestivalLiveModeScreen extends StatelessWidget {
                     _quick(
                       context,
                       '✅',
-                      'পূজা Checklist',
+                      'পূজা তালিকা',
                       const PujaChecklistScreen(),
                     ),
                     const SizedBox(width: 8),
@@ -22881,7 +25090,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🔔 Smart Reminder Center'),
+          const _ScreenHeader(title: '🔔 সব মনে করানো'),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -22932,7 +25141,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
                               child: _centerStat(
                                 '⏰',
                                 '${upcomingReminders.length}',
-                                'আগামী Reminder',
+                                'আগামী রিমাইন্ডার',
                               ),
                             ),
                             Container(
@@ -22952,7 +25161,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
                       ),
                       const SizedBox(height: 18),
                       const Text(
-                        'সবচেয়ে কাছের Reminder',
+                        'সবচেয়ে কাছের রিমাইন্ডার',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 15,
@@ -22961,7 +25170,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
                       ),
                       const SizedBox(height: 8),
                       if (upcomingReminders.isEmpty)
-                        _empty('কোনো future reminder নেই')
+                        _empty('কোনো আগামী রিমাইন্ডার নেই')
                       else
                         for (final r in upcomingReminders.take(4))
                           _line(
@@ -22971,7 +25180,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
                           ),
                       const SizedBox(height: 18),
                       const Text(
-                        'Family Upcoming',
+                        'পরিবারের আসন্ন দিন',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 15,
@@ -22980,7 +25189,7 @@ class _SmartReminderCenterScreenState extends State<SmartReminderCenterScreen> {
                       ),
                       const SizedBox(height: 8),
                       if (family.isEmpty)
-                        _empty('Family Calendar-এ এখনো কিছু যোগ করা হয়নি')
+                        _empty('পরিবারের ক্যালেন্ডার-এ এখনো কিছু যোগ করা হয়নি')
                       else
                         for (final f in family.take(4))
                           _line(
@@ -23142,7 +25351,7 @@ class _DailyRoutineScreenState extends State<DailyRoutineScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🌿 My Daily Routine'),
+          const _ScreenHeader(title: '🌿 রোজকার নিয়ম'),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -23327,7 +25536,7 @@ class _MyYearMapScreenState extends State<MyYearMapScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🗺️ My Year Map'),
+          const _ScreenHeader(title: '🗺️ বছরের মানচিত্র'),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -23335,7 +25544,7 @@ class _MyYearMapScreenState extends State<MyYearMapScreen> {
                     padding: const EdgeInsets.fromLTRB(15, 8, 15, 28),
                     children: [
                       const Text(
-                        'এক বছরে পঞ্জিকা ইভেন্ট, Family occasion ও আপনার Reminder — এক নজরে।',
+                        'এক বছরে পঞ্জিকা ইভেন্ট, পরিবার occasion ও আপনার রিমাইন্ডার — এক নজরে।',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 11.5,
@@ -23515,7 +25724,7 @@ class _PanchangTimeMachineScreenState extends State<PanchangTimeMachineScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🕰️ পঞ্জিকা Time Machine'),
+          const _ScreenHeader(title: '🕰️ পঞ্জিকা অতীত-ভবিষ্যতের পঞ্জিকা'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(15, 8, 15, 28),
@@ -23622,7 +25831,7 @@ class _PanchangTimeMachineScreenState extends State<PanchangTimeMachineScreen> {
                       const SizedBox(height: 9),
                       if (events.isEmpty)
                         const Text(
-                          'কোনো বিশেষ event সংরক্ষিত নেই।',
+                          'কোনো বিশেষ অনুষ্ঠান সংরক্ষিত নেই।',
                           style: TextStyle(
                             color: Colors.white60,
                             fontSize: 11.5,
@@ -23673,7 +25882,10 @@ class Next24HoursPanchangScreen extends StatelessWidget {
     final until = now.add(const Duration(hours: 24));
     final rows = <Map<String, dynamic>>[];
 
-    void add(DateTime time, String icon, String title) {
+    void add(DateTime raw, String icon, String title) {
+      // পঞ্চাঙ্গের সময় প্রকৃত মুহূর্তে না আনলে এই ছাঁকনি ভুল সারি
+      // বাদ দিত বা ঢোকাত
+      final time = panchangInstant(raw);
       if (!time.isBefore(now) && !time.isAfter(until)) {
         rows.add({'time': time, 'icon': icon, 'title': title});
       }
@@ -23838,7 +26050,7 @@ class _Phase6EventSummary extends StatelessWidget {
           Expanded(
             child: Text(
               events.isEmpty
-                  ? 'বিশেষ event নেই'
+                  ? 'বিশেষ অনুষ্ঠান নেই'
                   : events.map((e) => '${e.icon} ${e.label}').join(' • '),
               style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
@@ -24143,7 +26355,7 @@ class _BengaliLifePlannerScreenState extends State<BengaliLifePlannerScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 13),
                       ),
                       child: const Text(
-                        'Save Plan',
+                        'পরিকল্পনা সেভ করুন',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ),
@@ -24194,7 +26406,7 @@ class _BengaliLifePlannerScreenState extends State<BengaliLifePlannerScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🗓️ Bengali Life Planner'),
+          const _ScreenHeader(title: '🗓️ জীবনের পরিকল্পনা'),
           Padding(
             padding: const EdgeInsets.fromLTRB(15, 0, 15, 6),
             child: Align(
@@ -24403,7 +26615,7 @@ class _TravelPanchangPlannerScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🧭 Travel Panchang Planner'),
+          const _ScreenHeader(title: '🧭 যাত্রার শুভক্ষণ'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(15, 8, 15, 28),
@@ -24496,7 +26708,7 @@ class _TravelPanchangPlannerScreenState
                 const SizedBox(height: 9),
                 if (windows.isEmpty)
                   const Text(
-                    'দীর্ঘ daylight window পাওয়া যায়নি।',
+                    'দীর্ঘ দিনের আলোর সময় পাওয়া যায়নি।',
                     style: TextStyle(color: Colors.white60),
                   )
                 else
@@ -24520,7 +26732,7 @@ class _TravelPanchangPlannerScreenState
                           const SizedBox(width: 9),
                           Expanded(
                             child: Text(
-                              'Window ${bnNum(i + 1)}',
+                              'সময়সীমা ${bnNum(i + 1)}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
@@ -24622,7 +26834,7 @@ class _Phase6DailyIntelligenceCardState
               Text('🧠', style: TextStyle(fontSize: 20)),
               SizedBox(width: 7),
               Text(
-                'Daily Intelligence',
+                'রোজকার তথ্য',
                 style: TextStyle(
                   color: Color(0xFF7EE2B8),
                   fontSize: 14.5,
@@ -24633,7 +26845,7 @@ class _Phase6DailyIntelligenceCardState
           ),
           const SizedBox(height: 8),
           Text(
-            'আজ ${bnNum(events.length)}টি পঞ্জিকা event • ${bnNum(_openPlans)}টি personal plan',
+            'আজ ${bnNum(events.length)}টি পঞ্জিকা অনুষ্ঠান • ${bnNum(_openPlans)}টি personal প্ল্যান',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 11.5,
@@ -24659,7 +26871,7 @@ class _Phase6DailyIntelligenceCardState
                     ),
                   ).then((_) => _load()),
                   icon: const Icon(Icons.checklist_rounded, size: 17),
-                  label: const Text('Life Planner'),
+                  label: const Text('জীবনের পরিকল্পনা'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -24672,7 +26884,7 @@ class _Phase6DailyIntelligenceCardState
                     ),
                   ),
                   icon: const Icon(Icons.travel_explore_rounded, size: 17),
-                  label: const Text('Time Machine'),
+                  label: const Text('অতীত-ভবিষ্যতের পঞ্জিকা'),
                 ),
               ),
             ],
@@ -24699,154 +26911,114 @@ class _Super30Feature {
 }
 
 const List<_Super30Feature> _super30Features = [
-  _Super30Feature(
-    1,
-    '🧠',
-    'Explainable Panchang',
-    'কেন দিনটি ভালো/সতর্ক — কারণসহ',
-  ),
+  _Super30Feature(1, '🧠', 'কেন দিনটি শুভ', 'কেন দিনটি ভালো/সতর্ক — কারণসহ'),
   _Super30Feature(
     2,
     '🎯',
-    'Smart Day Recommendation',
+    'শুভ দিন খুঁজুন',
     'আগামী দিনের মধ্যে সেরা দিন খুঁজুন',
   ),
-  _Super30Feature(3, '⚖️', 'Compare 2–3 Dates', 'একাধিক দিনের পঞ্চাঙ্গ তুলনা'),
-  _Super30Feature(
-    4,
-    '🎊',
-    'Festival Live Theme',
-    'উৎসব অনুযায়ী live visual mode',
-  ),
+  _Super30Feature(3, '⚖️', 'দুই দিনের তুলনা', 'একাধিক দিনের পঞ্চাঙ্গ তুলনা'),
+  _Super30Feature(4, '🎊', 'উৎসবের সাজ', 'উৎসব অনুযায়ী জীবন্ত সাজ'),
   _Super30Feature(
     5,
     '📍',
-    'Local Bengali Hub',
-    'জেলা, স্থানীয় পূজা ও saved temple event',
+    'জেলার পঞ্জিকা',
+    'জেলা, স্থানীয় পূজা ও সেভ করা মন্দির অনুষ্ঠান',
   ),
   _Super30Feature(
     6,
     '👨‍👩‍👧',
-    'Family QR Sync',
-    'পরিবারের event share/import sync code',
+    'পরিবারের সঙ্গে মিলিয়ে নিন',
+    'পরিবারের অনুষ্ঠান share/import sync code',
   ),
-  _Super30Feature(7, '🧓', 'Elder Mode', 'বড় লেখা ও সহজ ৪টি প্রধান কাজ'),
+  _Super30Feature(7, '🧓', 'বড় লেখার মোড', 'বড় লেখা ও সহজ ৪টি প্রধান কাজ'),
   _Super30Feature(
     8,
     '🎙️',
-    'Full Bengali Voice Command',
+    'কথা বলে পঞ্জিকা',
     'বাংলায় প্রশ্ন ও voice assistant',
   ),
-  _Super30Feature(9, '🔔', 'Smart Reminder Center', 'সব reminder এক জায়গায়'),
-  _Super30Feature(
-    10,
-    '🌅',
-    'Morning Lock-Screen Brief',
-    'সকালের পঞ্জিকা notification',
-  ),
+  _Super30Feature(9, '🔔', 'সব মনে করানো', 'সব রিমাইন্ডার এক জায়গায়'),
+  _Super30Feature(10, '🌅', 'সকালের খবর', 'সকালের পঞ্জিকা notification'),
   _Super30Feature(
     11,
     '📱',
-    'Smart Home Widget Pack',
-    'তারিখ, তিথি ও festival widget preview',
+    'হোম স্ক্রিন উইজেট',
+    'তারিখ, তিথি ও উৎসব উইজেটের ঝলক',
   ),
   _Super30Feature(
     12,
     '🗓️',
-    'Bengali Life Planner',
+    'জীবনের পরিকল্পনা',
     'বাংলা তারিখে জীবন/কাজ পরিকল্পনা',
   ),
   _Super30Feature(
     13,
     '📊',
-    'Personal Year Dashboard',
-    'বছরের event, family ও reminder overview',
+    'বছরের মানচিত্র',
+    'বছরের অনুষ্ঠান, পরিবার ও রিমাইন্ডার সারসংক্ষেপ',
   ),
-  _Super30Feature(
-    14,
-    '📿',
-    'Devotional Hub',
-    'জপ, পূজা checklist, temple, streak',
-  ),
+  _Super30Feature(14, '📿', 'সাধনার ঘর', 'জপ, পূজা তালিকা, মন্দির, ধারা'),
   _Super30Feature(
     15,
     '🌕',
-    'Advanced Moon Center',
+    'চাঁদের খবর',
     'Moon phase, illumination ও next moon days',
   ),
   _Super30Feature(
     16,
     '🧭',
-    'Journey Planner',
-    'রাহুকাল এড়িয়ে traditional travel helper',
+    'যাত্রার শুভক্ষণ',
+    'রাহুকাল এড়িয়ে প্রথাগত যাত্রা-সহায়ক',
   ),
-  _Super30Feature(
-    17,
-    '📷',
-    'Daily Bengali Card Studio',
-    'আজকের পঞ্জিকা share card',
-  ),
-  _Super30Feature(
-    18,
-    '🎨',
-    'Festival Poster Studio Pro',
-    'উৎসবের poster তৈরি ও share',
-  ),
+  _Super30Feature(17, '📷', 'আজকের কার্ড', 'আজকের পঞ্জিকা share card'),
+  _Super30Feature(18, '🎨', 'উৎসবের পোস্টার', 'উৎসবের poster তৈরি ও share'),
   _Super30Feature(
     19,
     '📰',
-    'আজকের বাংলা Feed',
+    'আজকের বাংলা খবর',
     'ইতিহাস, ঋতু, উৎসব ও দিনের তথ্য',
   ),
   _Super30Feature(
     20,
     '🌦️',
-    'Weather + Panchang',
+    'আবহাওয়া ও পঞ্জিকা',
     'আবহাওয়া ও পঞ্জিকা এক card-এ',
   ),
-  _Super30Feature(
-    21,
-    '🌾',
-    'Season & Agriculture Calendar',
-    'বাংলা ঋতু ও মৌসুমি তথ্য',
-  ),
+  _Super30Feature(21, '🌾', 'ঋতু ও চাষের পঞ্জিকা', 'বাংলা ঋতু ও মৌসুমি তথ্য'),
   _Super30Feature(
     22,
     '🛕',
-    'Temple & Mela Map',
+    'মন্দির ও মেলার মানচিত্র',
     'জেলা অনুযায়ী Maps search shortcut',
   ),
   _Super30Feature(
     23,
     '📥',
-    'Offline Year Pack',
+    'ইন্টারনেট ছাড়া সারা বছর',
     'offline-ready year data status',
   ),
   _Super30Feature(
     24,
     '🔐',
-    'Private Family Vault',
-    'লোকাল PIN-এ family data সুরক্ষা',
+    'পরিবারের সিন্দুক',
+    'লোকাল PIN-এ পরিবার data সুরক্ষা',
   ),
-  _Super30Feature(25, '☁️', 'Multi-device Backup', 'cloud backup/restore'),
+  _Super30Feature(25, '☁️', 'তথ্য সংরক্ষণ', 'cloud backup/restore'),
   _Super30Feature(
     26,
     '✅',
-    'Accuracy Center',
+    'হিসাবের নির্ভুলতা',
     'location ও calculation source transparency',
   ),
-  _Super30Feature(27, '🔎', 'Universal Search', 'উৎসব, তিথি ও event search'),
-  _Super30Feature(28, '✨', 'Dynamic Home', 'সময় অনুযায়ী Home intelligence'),
-  _Super30Feature(
-    29,
-    '🏆',
-    'Daily Streak & Badges',
-    'পঞ্জিকা/সাধনা activity streak',
-  ),
+  _Super30Feature(27, '🔎', 'খুঁজুন', 'উৎসব, তিথি ও অনুষ্ঠান search'),
+  _Super30Feature(28, '✨', 'বদলে যাওয়া হোম', 'সময় অনুযায়ী Home intelligence'),
+  _Super30Feature(29, '🏆', 'সাধনার ধারা', 'পঞ্জিকা/সাধনা activity ধারা'),
   _Super30Feature(
     30,
     '🧩',
-    'Mini Apps',
+    'ছোট যন্ত্রপাতি',
     'Clock, converter, age, countdown tools',
   ),
 ];
@@ -24860,7 +27032,7 @@ class _Super30HomeCard extends StatelessWidget {
     if (h < 11) return 'সকালের Brief • আজকের পঞ্জিকা দিয়ে দিন শুরু করুন';
     if (h < 16) return 'দুপুরের Smart Tools • শুভ সময় ও কাজ মিলিয়ে নিন';
     if (h < 20) return 'সন্ধ্যার পূজা • প্রদীপ • পরিবার • আগামীকাল';
-    return 'রাতের Review • Diary • Reminder • আগামী দিনের প্রস্তুতি';
+    return 'রাতের Review • Diary • রিমাইন্ডার • আগামী দিনের প্রস্তুতি';
   }
 
   @override
@@ -25213,7 +27385,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
       if (!mounted) return;
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Family sync import সম্পূর্ণ')),
+        const SnackBar(content: Text('পরিবার sync import সম্পূর্ণ')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -25240,7 +27412,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          saved == null ? 'নতুন Family Vault PIN' : 'Family Vault PIN',
+          saved == null ? 'নতুন পরিবারের সিন্দুক PIN' : 'Family Vault PIN',
         ),
         content: TextField(
           controller: ctrl,
@@ -25289,8 +27461,10 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
         .rashiNames[PanchangCalculator.rashiIndexFor(sun.sunrise)];
     final rahu = PanchangCalculator.rahuKalam(now);
     final abh = PanchangCalculator.abhijitMuhurta(now);
+    // panchangInstant() ছাড়া এই তুলনাটা ৫:৩০ ভুল হতো
     final insideRahu =
-        now.isAfter(rahu['start']!) && now.isBefore(rahu['end']!);
+        now.isAfter(panchangInstant(rahu['start']!)) &&
+        now.isBefore(panchangInstant(rahu['end']!));
     int score = 70;
     if (abh['applicable'] == true) score += 12;
     if (insideRahu) score -= 18;
@@ -25323,7 +27497,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'এটি ঐতিহ্যভিত্তিক planning helper; নিশ্চিত ভবিষ্যদ্বাণী বা পেশাদার পরামর্শ নয়।',
+                'এটি ঐতিহ্যভিত্তিক পরিকল্পনা helper; নিশ্চিত ভবিষ্যদ্বাণী বা পেশাদার পরামর্শ নয়।',
                 style: TextStyle(color: Colors.white38, fontSize: 9.5),
               ),
             ],
@@ -25341,7 +27515,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heading('📍 ${AppLocation.district} Local Hub'),
+              _heading('📍 ${AppLocation.district} জেলা'),
               const SizedBox(height: 8),
               _line(
                 '🎉',
@@ -25349,17 +27523,17 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
               ),
               _line(
                 '🛕',
-                'আপনার saved temple/puja event: ${bnNum(TempleStore.instance.items.length)} টি',
+                'আপনার সেভ করা মন্দির ও পূজা: ${bnNum(TempleStore.instance.items.length)} টি',
               ),
               _line(
                 '👨‍👩‍👧',
-                'Family occasion: ${bnNum(FamilyMemberStore.instance.items.length)} টি saved',
+                'পরিবারের অনুষ্ঠান সেভ করা: ${bnNum(FamilyMemberStore.instance.items.length)} টি',
               ),
             ],
           ),
         ),
         const SizedBox(height: 10),
-        _button('স্থানীয় মন্দির Maps-এ খুঁজুন', () => _openMaps('temples in')),
+        _button('কাছের মন্দির মানচিত্রে খুঁজুন', () => _openMaps('temples in')),
       ],
     );
   }
@@ -25372,10 +27546,12 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heading('Family QR / Sync Code'),
+              _heading('পরিবারের সংকেত'),
               const SizedBox(height: 8),
               const Text(
-                'এই build-এ camera QR scanner যোগ না করে dependency-free share/import sync code রাখা হয়েছে। একই code পরে QR-এ encode করা যাবে।',
+                'পরিবারের সবার তারিখ ও অনুষ্ঠান এক করে রাখতে নিচের সংকেতটি '
+                'কপি করে অন্য ফোনে পাঠান। সেই ফোনে সংকেতটি বসিয়ে "তথ্য নিন" '
+                'চাপলেই সব মিলে যাবে।',
                 style: TextStyle(
                   color: Colors.white60,
                   fontSize: 10.5,
@@ -25390,8 +27566,8 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
               ),
               const SizedBox(height: 10),
               _button(
-                'Family Sync Code Share',
-                () => Share.share(code, subject: 'Bangla Panjika Family Sync'),
+                'সংকেত পাঠান',
+                () => shareFromApp(code, subject: 'Bangla Panjika Family Sync'),
               ),
             ],
           ),
@@ -25406,12 +27582,12 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
                 maxLines: 5,
                 style: const TextStyle(color: Colors.white, fontSize: 11),
                 decoration: const InputDecoration(
-                  hintText: 'অন্য ফোনের sync code paste করুন',
+                  hintText: 'অন্য ফোনের সংকেত এখানে বসান',
                   hintStyle: TextStyle(color: Colors.white38),
                 ),
               ),
               const SizedBox(height: 8),
-              _button('Import Family Data', _importFamily),
+              _button('তথ্য নিন', _importFamily),
             ],
           ),
         ),
@@ -25472,14 +27648,14 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heading('Lock-screen Morning Preview'),
+              _heading('লক স্ক্রিনে সকালের ঝলক'),
               const SizedBox(height: 8),
               _line('📅', '${bnNum(bnDay)} ${info.name} ${bnNum(info.year)}'),
               _line('🕉', '${t.paksha} পক্ষ • ${t.name}'),
               _line(
                 '🎉',
                 BengaliCalendarData.eventsFor(now).isEmpty
-                    ? 'আজ বড় কোনো saved festival নেই'
+                    ? 'আজ বড় কোনো সেভ করা উৎসব নেই'
                     : BengaliCalendarData.eventsFor(
                         now,
                       ).map((e) => e.label).join(' • '),
@@ -25510,7 +27686,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           ),
           const SizedBox(height: 8),
           _button(
-            '✅ পূজা Checklist',
+            '✅ পূজা তালিকা',
             () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const PujaChecklistScreen()),
@@ -25518,7 +27694,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           ),
           const SizedBox(height: 8),
           _button(
-            '🛕 Temple Planner',
+            '🛕 মন্দির পরিকল্পনা',
             () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const TempleScreen()),
@@ -25526,7 +27702,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           ),
           const SizedBox(height: 8),
           _button(
-            '🔥 Sadhana Streak',
+            '🔥 সাধনার ধারা',
             () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const SadhanaStreakScreen()),
@@ -25560,7 +27736,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heading('🌕 Advanced Moon Center'),
+              _heading('🌕 চাঁদের খবর'),
               const SizedBox(height: 10),
               Center(
                 child: SizedBox(
@@ -25623,11 +27799,11 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
               _line(
                 '🎉',
                 eventNames.isEmpty
-                    ? 'আজ কোনো বড় saved festival নেই'
+                    ? 'আজ কোনো বড় সেভ করা উৎসব নেই'
                     : eventNames.join(' • '),
               ),
               if (history.isEmpty)
-                _line('📚', 'আজকের verified history list-এ কোনো entry নেই')
+                _line('📚', 'আজকের verified history list-এ কোনো তথ্য নেই')
               else
                 ...history.map(
                   (h) => _line(
@@ -25666,7 +27842,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _heading('🌦️ Weather + Panchang'),
+          _heading('🌦️ আবহাওয়া ও পঞ্জিকা'),
           const SizedBox(height: 8),
           _line(
             rain ? '🌧️' : '🌤️',
@@ -25749,7 +27925,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
               ),
               _line(
                 '🗓️',
-                'Saved temple events: ${bnNum(TempleStore.instance.items.length)}',
+                'সংরক্ষিত মন্দির সূচি: ${bnNum(TempleStore.instance.items.length)}',
               ),
             ],
           ),
@@ -25781,10 +27957,13 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           const SizedBox(height: 8),
           _line(
             '✅',
-            'বাংলা date conversion ও Panchang calculation app-এর ভেতরেই আছে',
+            'বাংলা তারিখ রূপান্তর ও পঞ্চাঙ্গের হিসাব app-এর ভেতরেই আছে',
           ),
-          _line('✅', 'এই বছরের local event entries: ${bnNum(eventCount)}'),
-          _line('✅', 'Reminder/Diary/Family data ফোনে local save থাকে'),
+          _line(
+            '✅',
+            'এই বছরের অ্যাপে রাখা অনুষ্ঠান তথ্য: ${bnNum(eventCount)}',
+          ),
+          _line('✅', 'রিমাইন্ডার/Diary/পরিবার data ফোনে অ্যাপে রাখা save থাকে'),
           _line(
             '🌐',
             'Weather, cloud backup, payment এবং online map-এর জন্য internet লাগবে',
@@ -25802,10 +27981,10 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _heading('🔐 Private Family Vault'),
+                _heading('🔐 পরিবারের সিন্দুক'),
                 const SizedBox(height: 8),
                 const Text(
-                  'লোকাল PIN দিয়ে family list-এর এই private view খুলুন। এটি high-security encrypted vault নয়; biometric/local_auth dependency ছাড়াই lightweight privacy layer।',
+                  'লোকাল PIN দিয়ে পরিবার list-এর এই private view খুলুন। এটি high-security encrypted vault নয়; biometric/অ্যাপে রাখা_auth dependency ছাড়াই lightweight privacy layer।',
                   style: TextStyle(
                     color: Colors.white60,
                     fontSize: 10.5,
@@ -25828,11 +28007,11 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _heading('🔓 Family Vault Open'),
+          _heading('🔓 সিন্দুক খোলা'),
           const SizedBox(height: 8),
           if (FamilyMemberStore.instance.items.isEmpty)
             const Text(
-              'Family Calendar-এ এখনো data নেই।',
+              'পরিবারের ক্যালেন্ডার-এ এখনো data নেই।',
               style: TextStyle(color: Colors.white60),
             )
           else
@@ -25858,7 +28037,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _heading('✅ Panchang Accuracy Center'),
+          _heading('✅ হিসাবের নির্ভুলতা'),
           const SizedBox(height: 8),
           _line(
             '📍',
@@ -25871,7 +28050,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           ),
           _line(
             '📅',
-            'উৎসব/বিশেষ event BengaliCalendarData-এর local curated rules/data থেকে আসে',
+            'উৎসব/বিশেষ অনুষ্ঠান BengaliCalendarData-এর অ্যাপে রাখা curated rules/data থেকে আসে',
           ),
           _line(
             '⚠️',
@@ -25891,17 +28070,17 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
       items = [
         'আজকের তিথি দেখুন',
         'সূর্যোদয় ও রাহুকাল',
-        'আজকের কাজ ও reminder',
+        'আজকের কাজ ও রিমাইন্ডার',
       ];
     } else if (h < 17) {
       title = '☀️ Day Home';
       items = ['Best Day / Muhurta', 'Life Planner', 'Weather + Panchang'];
     } else if (h < 21) {
       title = '🪔 Evening Home';
-      items = ['পূজা Checklist', 'সন্ধ্যা প্রদীপ', 'Family Occasion'];
+      items = ['পূজা তালিকা', 'সন্ধ্যা প্রদীপ', 'Family Occasion'];
     } else {
       title = '🌙 Night Home';
-      items = ['Panjika Diary', 'আগামীকাল preview', 'Reminder review'];
+      items = ['Panjika Diary', 'আগামীকাল ঝলক', 'Reminder review'];
     }
     return _glass(
       Column(
@@ -25912,7 +28091,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           for (final x in items) _line('✨', x),
           const SizedBox(height: 8),
           const Text(
-            'Home-এর SUPER 30 card-টিও সময় অনুযায়ী message বদলায়।',
+            'হোমের SUPER 30 card-টিও সময় অনুযায়ী message বদলায়।',
             style: TextStyle(color: Colors.white38, fontSize: 9.5),
           ),
         ],
@@ -25928,7 +28107,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
       if (DateTime(now.year, _miniDob!.month, _miniDob!.day).isAfter(now)) y--;
       ageText = 'বয়স প্রায় ${bnNum(y)} বছর';
     }
-    String cdText = 'Countdown date নির্বাচন করুন';
+    String cdText = 'যে তারিখ পর্যন্ত গুনবেন নির্বাচন করুন';
     if (_countdownDate != null) {
       final days = DateTime(
         _countdownDate!.year,
@@ -25943,7 +28122,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           Column(
             children: [
               _button(
-                '🌍 World Clock',
+                '🌍 বিশ্ব ঘড়ি',
                 () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const WorldClockScreen()),
@@ -25951,7 +28130,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
               ),
               const SizedBox(height: 8),
               _button(
-                '🔄 Date Converter',
+                '🔄 তারিখ বদল',
                 () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -25961,7 +28140,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
               ),
               const SizedBox(height: 8),
               _button(
-                '🎉 Festival Countdown',
+                '🎉 উৎসব কত দিন পরে',
                 () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -25977,7 +28156,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heading('🎂 Age Calculator'),
+              _heading('🎂 বয়সের হিসাব'),
               const SizedBox(height: 6),
               Text(ageText, style: const TextStyle(color: Colors.white70)),
               TextButton(
@@ -26000,7 +28179,7 @@ class _Super30DetailScreenState extends State<Super30DetailScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heading('⏳ Countdown Maker'),
+              _heading('⏳ কত দিন বাকি'),
               const SizedBox(height: 6),
               Text(cdText, style: const TextStyle(color: Colors.white70)),
               TextButton(
@@ -26137,43 +28316,43 @@ class VastuHomeHubScreen extends StatelessWidget {
       (
         '🧭',
         '৮ দিক ও ব্রহ্মস্থান',
-        'কোন কোণে কী রাখা হয় — traditional guide',
+        'কোন কোণে কী রাখা হয় — প্রথাগত নির্দেশিকা',
         const VastuDirectionGuideScreen(),
       ),
       (
         '📐',
-        'Room Planner Check',
+        'ঘরের পরিকল্পনা যাচাই',
         'ঘর + দিক বেছে ঐতিহ্যগত suitability দেখুন',
         const VastuRoomPlannerScreen(),
       ),
       (
         '🚪',
-        'Main Door & Plot',
-        'Plot facing ও প্রবেশদ্বারের direction notes',
+        'প্রধান দরজা ও জমি',
+        'জমির দিক ও প্রবেশদ্বার সংক্রান্ত নোট',
         const VastuEntranceScreen(),
       ),
       (
         '🔥',
-        'Kitchen & Puja',
-        'অগ্নিকোণ, ঈশানকোণ ও layout tips',
+        'রান্নাঘর ও ঠাকুরঘর',
+        'অগ্নিকোণ, ঈশানকোণ ও সাজানোর পরামর্শ',
         const VastuKitchenPujaScreen(),
       ),
       (
         '🛏️',
-        'Bedroom & Study',
-        'শোওয়া, পড়াশোনা ও guest room guide',
+        'শোয়ার ও পড়ার ঘর',
+        'শোওয়া, পড়াশোনা ও অতিথিঘরের নির্দেশিকা',
         const VastuBedroomStudyScreen(),
       ),
       (
         '🚿',
-        'Utility Zones',
+        'স্নান ও ভাঁড়ার ঘর',
         'Toilet, staircase, water/storage traditional notes',
         const VastuUtilityScreen(),
       ),
       (
         '✅',
-        'Home Vastu Checklist',
-        'নিজের বাড়ির planning checklist save করুন',
+        'বাস্তু তালিকা',
+        'নিজের বাড়ির পরিকল্পনা তালিকা save করুন',
         const VastuHomeChecklistScreen(),
       ),
       (
@@ -26197,7 +28376,7 @@ class VastuHomeHubScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Traditional Vastu Companion',
+                        'প্রথাগত বাস্তু সহায়ক',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 18,
@@ -26325,36 +28504,36 @@ const List<_VastuDirectionInfo> _vastuDirections = [
     '🌅',
     'পূর্ব',
     'East • E',
-    'আলো, জানালা, study/entrance-এর সম্ভাব্য zone',
+    'আলো, জানালা, পড়ার ঘর ও প্রবেশপথ-এর সম্ভাব্য জায়গা',
     'সকালের আলো পাওয়ার দিক হিসেবে পূর্বকে গুরুত্ব দেওয়া হয়।',
   ),
   _VastuDirectionInfo(
     '🔥',
     'অগ্নি কোণ',
     'দক্ষিণ-পূর্ব • SE',
-    'রান্নাঘর/আগুন-সম্পর্কিত zone',
-    'প্রচলিত বাস্তুতে kitchen-এর সবচেয়ে পরিচিত zone দক্ষিণ-পূর্ব।',
+    'রান্নাঘর/আগুন-সম্পর্কিত জায়গা',
+    'প্রচলিত বাস্তুতে kitchen-এর সবচেয়ে পরিচিত জায়গা দক্ষিণ-পূর্ব।',
   ),
   _VastuDirectionInfo(
     '🧱',
     'দক্ষিণ',
     'South • S',
-    'ভারী storage/দেয়াল বা secondary zone',
-    'এখানে planning করার সময় ventilation ও বাস্তব heat-gain-ও বিবেচনা করুন।',
+    'ভারী storage/দেয়াল বা secondary জায়গা',
+    'এখানে পরিকল্পনা করার সময় হাওয়া চলাচল ও বাস্তব রোদের তাপ-ও বিবেচনা করুন।',
   ),
   _VastuDirectionInfo(
     '🛏️',
     'নৈঋত কোণ',
     'দক্ষিণ-পশ্চিম • SW',
     'Master bedroom/ভারী furniture',
-    'প্রচলিত মতে স্থিতিশীল/ভারী অংশের জন্য এই zone ব্যবহৃত হয়।',
+    'প্রচলিত মতে স্থিতিশীল/ভারী অংশের জন্য এই জায়গা ব্যবহৃত হয়।',
   ),
   _VastuDirectionInfo(
     '🌇',
     'পশ্চিম',
     'West • W',
     'Dining/store/secondary room',
-    'ঘরের প্রকৃত ব্যবহার, আলো ও ventilation অনুযায়ী layout ঠিক করুন।',
+    'ঘরের প্রকৃত ব্যবহার, আলো ও হাওয়া চলাচল অনুযায়ী সাজ ঠিক করুন।',
   ),
   _VastuDirectionInfo(
     '🌬️',
@@ -26483,17 +28662,17 @@ const Map<String, _RoomVastuRule> _roomVastuRules = {
   'রান্নাঘর': _RoomVastuRule(
     ['SE'],
     ['NW'],
-    'অগ্নি-সম্পর্কিত কাজের জন্য দক্ষিণ-পূর্বকে সবচেয়ে প্রচলিত kitchen zone ধরা হয়।',
+    'অগ্নি-সম্পর্কিত কাজের জন্য দক্ষিণ-পূর্বকে সবচেয়ে প্রচলিত kitchen জায়গা ধরা হয়।',
   ),
   'Master Bedroom': _RoomVastuRule(
     ['SW'],
     ['S', 'W'],
-    'নৈঋত কোণকে স্থিতিশীল/ভারী zone হিসেবে master bedroom-এর সাথে যুক্ত করা হয়।',
+    'নৈঋত কোণকে স্থিতিশীল/ভারী জায়গা হিসেবে master bedroom-এর সাথে যুক্ত করা হয়।',
   ),
   'Guest Room': _RoomVastuRule(
     ['NW'],
     ['N', 'W'],
-    'বায়ব্যকে movement/guest-oriented zone হিসেবে দেখা হয়।',
+    'বায়ব্যকে movement/guest-oriented জায়গা হিসেবে দেখা হয়।',
   ),
   'Study Room': _RoomVastuRule(
     ['E', 'N', 'NE'],
@@ -26503,7 +28682,7 @@ const Map<String, _RoomVastuRule> _roomVastuRules = {
   'Dining': _RoomVastuRule(
     ['W', 'E'],
     ['N'],
-    'Dining-এর ক্ষেত্রে practical circulation, kitchen proximity ও ventilation-ও সমান গুরুত্বপূর্ণ।',
+    'Dining-এর ক্ষেত্রে practical circulation, kitchen proximity ও হাওয়া চলাচল-ও সমান গুরুত্বপূর্ণ।',
   ),
 };
 
@@ -26521,7 +28700,7 @@ class _VastuRoomPlannerScreenState extends State<VastuRoomPlannerScreen> {
     final r = _roomVastuRules[_room]!;
     if (r.preferred.contains(_direction)) return 'খুব প্রচলিত পছন্দ';
     if (r.acceptable.contains(_direction)) return 'গ্রহণযোগ্য বিকল্প';
-    return 'অন্য layout-ও বিবেচনা করুন';
+    return 'অন্য সাজ-ও বিবেচনা করুন';
   }
 
   Color get _statusColor {
@@ -26538,7 +28717,7 @@ class _VastuRoomPlannerScreenState extends State<VastuRoomPlannerScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '📐 Room Planner Check'),
+          const _ScreenHeader(title: '📐 ঘরের অবস্থান'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
@@ -26633,7 +28812,7 @@ class _VastuRoomPlannerScreenState extends State<VastuRoomPlannerScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Preferred: ${rule.preferred.join(', ')}  •  Alternative: ${rule.acceptable.join(', ')}',
+                        'পছন্দের দিক: ${rule.preferred.join(', ')}  •  Alternative: ${rule.acceptable.join(', ')}',
                         style: const TextStyle(
                           color: Colors.white60,
                           fontSize: 10.5,
@@ -26641,7 +28820,7 @@ class _VastuRoomPlannerScreenState extends State<VastuRoomPlannerScreen> {
                       ),
                       const SizedBox(height: 10),
                       const Text(
-                        'এই ফল traditional Vastu reference; বাড়ির বাস্তব shape, ventilation, sunlight, plumbing ও structure দেখে architect-এর plan-ই চূড়ান্ত।',
+                        'এই ফল traditional Vastu reference; বাড়ির বাস্তব shape, হাওয়া চলাচল, sunlight, plumbing ও structure দেখে architect-এর প্ল্যান-ই চূড়ান্ত।',
                         style: TextStyle(
                           color: Colors.white54,
                           fontSize: 10.2,
@@ -26674,9 +28853,9 @@ class _VastuEntranceScreenState extends State<VastuEntranceScreen> {
     'North':
         'উত্তরমুখী plot-এ north/north-east opening নিয়ে প্রচলিত ইতিবাচক ধারণা আছে। বাস্তবে road level, drainage ও privacy আগে দেখুন।',
     'West':
-        'পশ্চিমমুখী plot-ও ব্যবহারযোগ্য। Afternoon heat, shading, ventilation এবং entrance placement বাস্তব design-এ গুরুত্বপূর্ণ।',
+        'পশ্চিমমুখী plot-ও ব্যবহারযোগ্য। Afternoon heat, shading, হাওয়া চলাচল এবং entrance placement বাস্তব design-এ গুরুত্বপূর্ণ।',
     'South':
-        'দক্ষিণমুখী plot স্বয়ংক্রিয়ভাবে “খারাপ” নয়। Traditional rules schoolভেদে বদলায়; heat control, shade, drainage ও functional plan-কে অগ্রাধিকার দিন।',
+        'দক্ষিণমুখী plot স্বয়ংক্রিয়ভাবে “খারাপ” নয়। Traditional rules schoolভেদে বদলায়; heat control, shade, drainage ও functional প্ল্যান-কে অগ্রাধিকার দিন।',
   };
 
   @override
@@ -26684,7 +28863,7 @@ class _VastuEntranceScreenState extends State<VastuEntranceScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🚪 Main Door & Plot'),
+          const _ScreenHeader(title: '🚪 প্রধান দরজা ও জমি'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
@@ -26694,7 +28873,7 @@ class _VastuEntranceScreenState extends State<VastuEntranceScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Plot Facing',
+                        'জমির মুখ',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 16,
@@ -26741,7 +28920,7 @@ class _VastuEntranceScreenState extends State<VastuEntranceScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Main Door Practical Checklist',
+                        'প্রধান দরজার তালিকা',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 15,
@@ -26776,7 +28955,7 @@ class VastuKitchenPujaScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🔥 Kitchen & Puja'),
+          const _ScreenHeader(title: '🔥 রান্নাঘর ও ঠাকুরঘর'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
@@ -26846,7 +29025,7 @@ class VastuBedroomStudyScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🛏️ Bedroom & Study'),
+          const _ScreenHeader(title: '🛏️ শোয়ার ও পড়ার ঘর'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
@@ -26856,7 +29035,7 @@ class VastuBedroomStudyScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '🛏️ Master Bedroom',
+                        '🛏️ প্রধান শোয়ার ঘর',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 16,
@@ -26881,7 +29060,7 @@ class VastuBedroomStudyScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '📚 Study / Work Room',
+                        '📚 পড়ার ও কাজের ঘর',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 16,
@@ -26906,7 +29085,7 @@ class VastuBedroomStudyScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '🌬️ Guest Room',
+                        '🌬️ অতিথিঘর',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 16,
@@ -26942,28 +29121,28 @@ class VastuUtilityScreen extends StatelessWidget {
       (
         '🚿',
         'Toilet / Bathroom',
-        'বাস্তু schoolভেদে দিকের নিয়ম আলাদা। Plumbing slope, waterproofing, exhaust/ventilation, hygiene ও leakage prevention-কে priority দিন।',
+        'বাস্তু schoolভেদে দিকের নিয়ম আলাদা। Plumbing slope, waterproofing, exhaust/হাওয়া চলাচল, hygiene ও leakage prevention-কে গুরুত্ব দিন।',
       ),
       (
         '🪜',
         'Staircase',
-        'প্রচলিতভাবে south/west/SW zone নিয়ে নির্দেশনা দেখা যায়। Structural calculation, headroom, handrail, riser/tread ও fire escape code অবশ্যই engineer অনুযায়ী।',
+        'প্রচলিতভাবে south/west/SW জায়গা নিয়ে নির্দেশনা দেখা যায়। Structural calculation, headroom, handrail, riser/tread ও fire escape code অবশ্যই engineer অনুযায়ী।',
       ),
       (
         '💧',
         'Water',
-        'Underground/overhead water-এর traditional zone rule একরকম নয়। বাস্তবে soil, pump, plumbing pressure, waterproofing, maintenance access ও load calculation জরুরি।',
+        'Underground/overhead water-এর traditional জায়গা rule একরকম নয়। বাস্তবে soil, pump, plumbing pressure, waterproofing, maintenance access ও আসতে calculation জরুরি।',
       ),
       (
         '📦',
         'Storage',
-        'ভারী storage দক্ষিণ/পশ্চিম/SW-এ রাখার প্রচলিত ধারণা আছে। কিন্তু slab load capacity ও safe access engineer অনুযায়ী নিশ্চিত করুন।',
+        'ভারী storage দক্ষিণ/পশ্চিম/SW-এ রাখার প্রচলিত ধারণা আছে। কিন্তু slab আসতে capacity ও safe access engineer অনুযায়ী নিশ্চিত করুন।',
       ),
     ];
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🚿 Utility Zones'),
+          const _ScreenHeader(title: '🚿 স্নান ও ভাঁড়ার ঘর'),
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
@@ -27012,13 +29191,13 @@ class _VastuHomeChecklistScreenState extends State<VastuHomeChecklistScreen> {
   static const _storageKey = 'vastu_home_checklist_v1';
   static const _items = [
     'পূজা/ধ্যানের জায়গা শান্ত ও পরিষ্কার',
-    'Kitchen-এ exhaust/ventilation আছে',
+    'Kitchen-এ exhaust/হাওয়া চলাচল আছে',
     'Main door circulation বাধাহীন',
-    'Bedroom-এ privacy ও ventilation ঠিক',
+    'Bedroom-এ privacy ও হাওয়া চলাচল ঠিক',
     'Study area-তে পর্যাপ্ত আলো',
-    'Toilet waterproofing/exhaust plan হয়েছে',
+    'Toilet waterproofing/exhaust প্ল্যান হয়েছে',
     'Staircase safety/handrail/code check হয়েছে',
-    'Water tank/plumbing load engineer check করেছেন',
+    'Water tank/plumbing আসতে engineer check করেছেন',
     'Foundation/column structural engineer approve করেছেন',
     'Local setback/building permission check হয়েছে',
   ];
@@ -27069,7 +29248,7 @@ class _VastuHomeChecklistScreenState extends State<VastuHomeChecklistScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '✅ Home Vastu Checklist'),
+          const _ScreenHeader(title: '✅ বাস্তু তালিকা'),
           Expanded(
             child: !_loaded
                 ? const Center(child: CircularProgressIndicator())
@@ -27106,7 +29285,7 @@ class _VastuHomeChecklistScreenState extends State<VastuHomeChecklistScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                '${_done.length}/${_items.length} planning check complete',
+                                '${bnNum(_done.length)}/${bnNum(_items.length)} টি ধাপ সম্পন্ন',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
@@ -27189,7 +29368,7 @@ const List<_Phase18Feature> _phase18Features = [
     'tide',
     '🌊',
     'জোয়ার-ভাটা Calendar',
-    'তারিখভিত্তিক উপকূলীয় tide note',
+    'তারিখভিত্তিক উপকূলীয় জোয়ার-ভাটার তথ্য',
   ),
   _Phase18Feature(
     'season',
@@ -27206,8 +29385,8 @@ const List<_Phase18Feature> _phase18Features = [
   _Phase18Feature(
     'lamp',
     '🕯️',
-    'প্রদীপ ও সন্ধ্যা Mode',
-    'সূর্যাস্তভিত্তিক live সন্ধ্যা reminder',
+    'প্রদীপ ও সন্ধ্যা মোড',
+    'সূর্যাস্তভিত্তিক live সন্ধ্যা রিমাইন্ডার',
   ),
   _Phase18Feature(
     'brahma',
@@ -27219,7 +29398,7 @@ const List<_Phase18Feature> _phase18Features = [
     'samagri',
     '🪔',
     'Puja Samagri Generator',
-    'পূজা বেছে checklist তৈরি',
+    'পূজা বেছে তালিকা তৈরি',
   ),
   _Phase18Feature(
     'anniversary',
@@ -27243,7 +29422,7 @@ const List<_Phase18Feature> _phase18Features = [
     'temple_bell',
     '🔔',
     'Temple Bell Time',
-    'সকাল/সন্ধ্যার আরতি reminder',
+    'সকাল/সন্ধ্যার আরতি রিমাইন্ডার',
   ),
   _Phase18Feature(
     'month_story',
@@ -27251,12 +29430,7 @@ const List<_Phase18Feature> _phase18Features = [
     'বাংলা মাসের গল্প',
     '১২ মাসের ঋতু, সংস্কৃতি ও উৎসব',
   ),
-  _Phase18Feature(
-    'alpana',
-    '🎨',
-    'Alpana Generator',
-    'procedural আলপনা preview',
-  ),
+  _Phase18Feature('alpana', '🎨', 'Alpana Generator', 'আঁকা আলপনা ঝলক'),
   _Phase18Feature(
     'festival_route',
     '🎊',
@@ -27273,7 +29447,7 @@ const List<_Phase18Feature> _phase18Features = [
     'moon_alert',
     '🌙',
     'Chandradarshan Alert',
-    'অমাবস্যার পর প্রথম সন্ধ্যার reminder',
+    'অমাবস্যার পর প্রথম সন্ধ্যার রিমাইন্ডার',
   ),
   _Phase18Feature(
     'yatra',
@@ -27321,19 +29495,19 @@ const List<_Phase18Feature> _phase18Features = [
     'offline_pack',
     '📦',
     'Offline Festival Pack',
-    'আগামী উৎসব local cache-এ রাখুন',
+    'আগামী উৎসব ফোনে সংরক্ষণ করুন',
   ),
   _Phase18Feature(
     'silent',
     '🔕',
     'Smart Silent Hours',
-    'নতুন alert-এর quiet-time control',
+    'নতুন সতর্কবার্তা-এর quiet-time control',
   ),
   _Phase18Feature(
     'memory',
     '🎞️',
     'Festival Memory Timeline',
-    'উৎসবের স্মৃতি ও note timeline',
+    'উৎসবের স্মৃতি ও স্মৃতির পাতা',
   ),
   _Phase18Feature(
     'meditation',
@@ -27351,7 +29525,7 @@ const List<_Phase18Feature> _phase18Features = [
     'streak',
     '🏆',
     'Daily Panchang Streak',
-    'প্রতিদিন পঞ্জিকা দেখার streak',
+    'প্রতিদিন পঞ্জিকা দেখার ধারা',
   ),
 ];
 
@@ -27383,7 +29557,7 @@ class _Phase18Latest30HubScreenState extends State<Phase18Latest30HubScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🆕 Latest 30 • Phase 18'),
+          const _ScreenHeader(title: '🆕 নবসংযোজন'),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: TextField(
@@ -27537,7 +29711,7 @@ class _Phase18HomeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Latest 30 • নতুন আপডেট',
+                    'নতুন ৩০টি সুবিধা',
                     style: TextStyle(
                       color: Color(0xFFFFD36E),
                       fontSize: 14.5,
@@ -27846,7 +30020,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             TextField(
               controller: note,
               maxLines: 3,
-              decoration: const InputDecoration(labelText: 'স্মৃতি / note'),
+              decoration: const InputDecoration(labelText: 'স্মৃতি / নোট'),
             ),
           ],
         ),
@@ -27857,7 +30031,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
+            child: const Text('সেভ করুন'),
           ),
         ],
       ),
@@ -27961,7 +30135,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             ...rows,
             const SizedBox(height: 6),
             _note(
-              'এটি lightweight astronomical sky guide। দৃশ্যমানতা মেঘ, আলো দূষণ ও স্থানীয় দিগন্তের ওপর নির্ভর করে।',
+              'এটি আকাশ চেনার সহজ নির্দেশিকা। দৃশ্যমানতা মেঘ, আলো দূষণ ও স্থানীয় দিগন্তের ওপর নির্ভর করে।',
             ),
           ],
         ),
@@ -28015,7 +30189,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('জোয়ার-ভাটা note'),
+        title: const Text('জোয়ার-ভাটা নোট'),
         content: TextField(
           controller: c,
           maxLines: 4,
@@ -28030,7 +30204,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
+            child: const Text('সেভ করুন'),
           ),
         ],
       ),
@@ -28066,7 +30240,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
                   child: FilledButton.icon(
                     onPressed: _editTideNote,
                     icon: const Icon(Icons.edit_note),
-                    label: const Text('Tide note'),
+                    label: const Text('জোয়ার-ভাটার কথা'),
                   ),
                 ),
               ],
@@ -28077,7 +30251,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             ],
             const SizedBox(height: 10),
             _note(
-              'জোয়ার-ভাটা খুব location-specific। কোনো fake live সময় দেখানো হচ্ছে না—official/local tide table থেকে সময় নিয়ে এখানে save করুন। নৌযাত্রা বা নিরাপত্তার সিদ্ধান্তে official marine data ব্যবহার করুন।',
+              'জোয়ার-ভাটা খুব location-specific। কোনো fake live সময় দেখানো হচ্ছে না—official/অ্যাপে রাখা tide table থেকে সময় নিয়ে এখানে save করুন। নৌযাত্রা বা নিরাপত্তার সিদ্ধান্তে official marine data ব্যবহার করুন।',
             ),
           ],
         ),
@@ -28216,7 +30390,8 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    final left = sun.sunset.difference(now);
+    final sunsetAt = panchangInstant(sun.sunset);
+    final left = sunsetAt.difference(now);
     return [
       _glass(
         Column(
@@ -28226,15 +30401,15 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             _line('🌇', 'সূর্যাস্ত', bnTime12(sun.sunset)),
             _line(
               '⏳',
-              now.isBefore(sun.sunset) ? 'সন্ধ্যা শুরু হতে' : 'আজকের sunset',
-              now.isBefore(sun.sunset) ? _duration(left) : 'হয়ে গেছে',
+              now.isBefore(sunsetAt) ? 'সন্ধ্যা শুরু হতে' : 'আজকের sunset',
+              now.isBefore(sunsetAt) ? _duration(left) : 'হয়ে গেছে',
             ),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               value: AppSettings.instance.eveningLampReminder,
               activeThumbColor: const Color(0xFFFFD36E),
               title: const Text(
-                'প্রতিদিন সূর্যাস্তে প্রদীপ reminder',
+                'প্রতিদিন সূর্যাস্তে প্রদীপ রিমাইন্ডার',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w800,
@@ -28262,8 +30437,9 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    final start = sun.sunrise.subtract(const Duration(minutes: 96));
-    final end = sun.sunrise.subtract(const Duration(minutes: 48));
+    final sunriseAt = panchangInstant(sun.sunrise);
+    final start = sunriseAt.subtract(const Duration(minutes: 96));
+    final end = sunriseAt.subtract(const Duration(minutes: 48));
     String live;
     if (now.isBefore(start))
       live = 'শুরু হতে ${_duration(start.difference(now))}';
@@ -28356,7 +30532,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             ),
             const SizedBox(height: 6),
             _note(
-              'এটি সাধারণ checklist; পারিবারিক/সম্প্রদায়ভেদে আচার ও সামগ্রী ভিন্ন হতে পারে।',
+              'এটি সাধারণ তালিকা; পারিবারিক/সম্প্রদায়ভেদে আচার ও সামগ্রী ভিন্ন হতে পারে।',
             ),
           ],
         ),
@@ -28458,7 +30634,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
     );
     if (mounted)
       setState(
-        () => _status = '✅ পরবর্তী সকাল ও সন্ধ্যার reminder schedule হয়েছে',
+        () => _status = '✅ পরবর্তী সকাল ও সন্ধ্যার রিমাইন্ডার schedule হয়েছে',
       );
   }
 
@@ -28510,7 +30686,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             FilledButton.icon(
               onPressed: _saveBellTimes,
               icon: const Icon(Icons.notifications_active),
-              label: const Text('Reminder চালু করুন'),
+              label: const Text('রিমাইন্ডার চালু করুন'),
             ),
             if (_status.isNotEmpty)
               Padding(
@@ -28590,7 +30766,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
     _glass(
       Column(
         children: [
-          _heading('Procedural Alpana Preview'),
+          _heading('আলপনার নকশা'),
           const SizedBox(
             height: 260,
             child: CustomPaint(
@@ -28732,7 +30908,9 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    return sun.sunset.add(const Duration(minutes: 20));
+    // একই কারণে এখানেও panchangInstant() — নইলে চন্দ্রদর্শনের
+    // রিমাইন্ডারও ৫:৩০ দেরিতে বাজত
+    return panchangInstant(sun.sunset).add(const Duration(minutes: 20));
   }
 
   Future<void> _scheduleMoonAlert() async {
@@ -28746,7 +30924,8 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
     );
     if (mounted)
       setState(
-        () => _status = '✅ ${_dateLabel(d)} • ${bnTime12(d)} reminder set',
+        () => _status =
+            '✅ ${_dateLabel(d)} • ${bnTime12(d)} — রিমাইন্ডার সেট হয়েছে',
       );
   }
 
@@ -28757,7 +30936,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _heading('পরবর্তী চন্দ্রদর্শন window'),
+            _heading('পরবর্তী চন্দ্রদর্শন সময়'),
             _line(
               '🌙',
               'সম্ভাব্য সময়',
@@ -28766,7 +30945,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             FilledButton.icon(
               onPressed: d == null ? null : _scheduleMoonAlert,
               icon: const Icon(Icons.notifications_active),
-              label: const Text('Alert সেট করুন'),
+              label: const Text('সতর্কবার্তা সেট করুন'),
             ),
             if (_status.isNotEmpty)
               Padding(
@@ -28778,7 +30957,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
               ),
             const SizedBox(height: 8),
             _note(
-              'এটি অমাবস্যার পরের সন্ধ্যার একটি আনুমানিক viewing reminder; বাস্তব দৃশ্যমানতা আবহাওয়া ও স্থানীয় দিগন্তের ওপর নির্ভর করে।',
+              'এটি অমাবস্যার পরের সন্ধ্যার একটি আনুমানিক viewing রিমাইন্ডার; বাস্তব দৃশ্যমানতা আবহাওয়া ও স্থানীয় দিগন্তের ওপর নির্ভর করে।',
             ),
           ],
         ),
@@ -28836,7 +31015,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             ),
             const SizedBox(height: 8),
             _note(
-              'এটি ঐতিহ্যভিত্তিক planning helper। বাস্তব যাত্রায় আবহাওয়া, রাস্তা, পরিবহন ও নিরাপত্তাকে সর্বোচ্চ অগ্রাধিকার দিন।',
+              'এটি ঐতিহ্যভিত্তিক পরিকল্পনা helper। বাস্তব যাত্রায় আবহাওয়া, রাস্তা, পরিবহন ও নিরাপত্তাকে সর্বোচ্চ অগ্রাধিকার দিন।',
             ),
           ],
         ),
@@ -28891,7 +31070,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
         ),
       ),
       _note(
-        'এটি offline heritage guide; navigation/map distance নয়। পরে verified map dataset/API যোগ করলে interactive map করা যাবে।',
+        'এটি ইন্টারনেট ছাড়া ঐতিহ্যের নির্দেশিকা; পথনির্দেশ বা দূরত্বের হিসাব নয়। পরে যাচাই করা মানচিত্র dataset/API যোগ করলে interactive map করা যাবে।',
       ),
     ];
   }
@@ -28902,7 +31081,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _heading('Festival Sound Mode'),
+            _heading('উৎসবের শব্দ'),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -28914,7 +31093,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
                     } catch (_) {}
                   },
                   icon: const Text('🔔'),
-                  label: const Text('Bell Tone'),
+                  label: const Text('ঘণ্টার শব্দ'),
                 ),
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -28923,14 +31102,14 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
                     } catch (_) {}
                   },
                   icon: const Text('🪘'),
-                  label: const Text('Soft Beat'),
+                  label: const Text('মৃদু তাল'),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => TtsService.instance.speak(
                     'শুভ দিন। শান্ত মনে প্রার্থনা করুন।',
                   ),
                   icon: const Text('🕉️'),
-                  label: const Text('বাংলা Voice'),
+                  label: const Text('বাংলা ভয়েস'),
                 ),
               ],
             ),
@@ -28952,7 +31131,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _heading('Date / Panchang Calculator'),
+            _heading('তারিখ ও পঞ্চাঙ্গের হিসাব'),
             _line(
               '1️⃣',
               'প্রথম তারিখ',
@@ -29079,7 +31258,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _heading('🌠 Night Panchang'),
+            _heading('🌠 রাতের পঞ্জিকা'),
             _line(
               '🌙',
               'চাঁদ',
@@ -29153,7 +31332,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
     if (mounted)
       setState(
         () => _status =
-            '✅ ${items.length}টি upcoming festival local cache-এ রাখা হয়েছে',
+            '✅ ${bnNum(items.length)}টি আসন্ন উৎসব ফোনে সংরক্ষণ করা হয়েছে',
       );
   }
 
@@ -29167,7 +31346,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _heading('Offline Festival Pack'),
+            _heading('ইন্টারনেট ছাড়া উৎসবের তথ্য'),
             ...items
                 .take(8)
                 .map(
@@ -29181,7 +31360,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             FilledButton.icon(
               onPressed: _cacheFestivalPack,
               icon: const Icon(Icons.download_for_offline),
-              label: const Text('১ বছরের pack cache করুন'),
+              label: const Text('১ বছরের তথ্য সংরক্ষণ করুন'),
             ),
             if (_status.isNotEmpty)
               Padding(
@@ -29196,7 +31375,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
               ),
             const SizedBox(height: 8),
             _note(
-              'এটি app-এর calculated festival summary local storage-এ রাখে; internet না থাকলেও cached list ব্যবহার করা যাবে।',
+              'এটি app-এর calculated উৎসব summary অ্যাপে রাখা storage-এ রাখে; ইন্টারনেট না থাকলেও সংরক্ষিত তালিকা ব্যবহার করা যাবে।',
             ),
           ],
         ),
@@ -29209,7 +31388,8 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
     await p.setBool('${_key}_enabled', _silentEnabled);
     await p.setString('${_key}_a', _timeKey(_timeA));
     await p.setString('${_key}_b', _timeKey(_timeB));
-    if (mounted) setState(() => _status = '✅ Silent hours saved');
+    if (mounted)
+      setState(() => _status = '✅ নীরব সময়ের পছন্দ সংরক্ষিত হয়েছে');
   }
 
   List<Widget> _silentHours() {
@@ -29223,7 +31403,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
               value: _silentEnabled,
               activeThumbColor: const Color(0xFFFFD36E),
               title: const Text(
-                'Smart Silent Hours',
+                'নীরব সময়',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
@@ -29261,13 +31441,13 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             FilledButton.icon(
               onPressed: _saveSilent,
               icon: const Icon(Icons.save),
-              label: const Text('Save'),
+              label: const Text('সেভ করুন'),
             ),
             if (_status.isNotEmpty)
               Text(_status, style: const TextStyle(color: Color(0xFF8EF2D7))),
             const SizedBox(height: 8),
             _note(
-              'এই setting Phase-18 থেকে তৈরি নতুন alerts-এর quiet-time preference হিসেবে সংরক্ষিত থাকে। System/পুরোনো reminder-এর আচরণ Android/iOS notification policy-এর ওপর নির্ভর করে।',
+              'নীরব সময় চালু থাকলে নতুন সতর্কবার্তাগুলো ওই সময়ে বাজবে না। তবে আগে থেকে সেট করা রিমাইন্ডার ও ফোনের নিজস্ব নোটিফিকেশনে এই নিয়ম প্রযোজ্য নয় — সেগুলো ফোনের সেটিংস থেকে নিয়ন্ত্রণ করতে হয়।',
             ),
           ],
         ),
@@ -29283,7 +31463,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
           children: [
             Row(
               children: [
-                Expanded(child: _heading('Festival Memory Timeline')),
+                Expanded(child: _heading('উৎসবের স্মৃতির পাতা')),
                 FilledButton.icon(
                   onPressed: _addMemory,
                   icon: const Icon(Icons.add_a_photo_outlined, size: 18),
@@ -29378,7 +31558,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
       _glass(
         Column(
           children: [
-            _heading('Meditation & Breath Timer'),
+            _heading('ধ্যান ও শ্বাসের সময়'),
             AnimatedContainer(
               duration: const Duration(milliseconds: 700),
               width: _meditationRunning ? 150 : 115,
@@ -29420,7 +31600,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
               children: [60, 180, 300]
                   .map(
                     (s) => ChoiceChip(
-                      label: Text('${s ~/ 60} min'),
+                      label: Text('${bnNum(s ~/ 60)} মিনিট'),
                       selected: !_meditationRunning && _meditationSeconds == s,
                       onSelected: _meditationRunning
                           ? null
@@ -29510,7 +31690,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
           children: [
             const Text('🏆', style: TextStyle(fontSize: 58)),
             Text(
-              '${bnNum(_streak)} দিনের streak',
+              '${bnNum(_streak)} দিনের ধারা',
               style: const TextStyle(
                 color: Color(0xFFFFD36E),
                 fontSize: 26,
@@ -29519,7 +31699,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
             ),
             const SizedBox(height: 8),
             _note(
-              'প্রতিদিন এই feature খুললে streak বাড়বে। এক দিনের বেশি gap হলে নতুন streak শুরু হবে। কোনো টাকা/পুরস্কার বা gambling নেই—শুধু personal engagement badge।',
+              'প্রতিদিন এই feature খুললে ধারা বাড়বে। এক দিনের বেশি gap হলে নতুন ধারা শুরু হবে। কোনো টাকা/পুরস্কার বা gambling নেই—শুধু personal engagement badge।',
             ),
           ],
         ),
@@ -29648,7 +31828,7 @@ class _Phase18FeatureScreenState extends State<Phase18FeatureScreen> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Text(
-                          'NON-AI',
+                          'AI ব্যবহার হয়নি',
                           style: TextStyle(
                             color: Color(0xFF8EF2D7),
                             fontSize: 9,
@@ -29772,39 +31952,39 @@ class SuperServicesScreen extends StatelessWidget {
       case 'গৃহপ্রবেশ':
       case 'গাড়ি কেনা':
       case 'জমি কেনা':
-      case 'ব্যবসা শুরু':
+      case 'ব্যবসা শুরুর শুভক্ষণ':
         pushPage(const ShubhoMuhurtaScreen());
         return;
 
-      case 'Family Calendar':
+      case 'পরিবারের ক্যালেন্ডার':
       case 'বাংলা জন্মদিন':
         pushPage(const FamilyCalendarScreen());
         return;
 
       case 'Reminder':
-      case 'বাংলা Voice':
-      case 'Festival Alert':
+      case 'বাংলা ভয়েস':
+      case 'উৎসবের আগাম খবর':
         pushPage(const ReminderScreen());
         return;
 
-      case 'Favourite Day':
+      case 'প্রিয় দিন':
         pushPage(const FavouriteDayScreen());
         return;
 
-      case 'Date Converter':
+      case 'তারিখ বদল':
         pushPage(const DateConverterScreen());
         return;
 
       case 'আজ কী ভালো':
-      case 'Panchang Timeline':
+      case 'দিনের সময়সূচি':
         pushPage(const TodaySmartScreen());
         return;
 
-      case 'Month Summary':
+      case 'মাসের হিসাব':
         pushPage(const MonthSummaryScreen());
         return;
 
-      case 'Puja Checklist':
+      case 'পূজার তালিকা':
         pushPage(const PujaChecklistScreen());
         return;
 
@@ -29825,96 +32005,96 @@ class SuperServicesScreen extends StatelessWidget {
         pushPage(const TodayHistoryScreen());
         return;
 
-      case 'Home Widget':
+      case 'হোম স্ক্রিন উইজেট':
         pushPage(const HomeWidgetInfoScreen());
         return;
 
-      case 'Panjika Voice':
+      case 'কথা বলে পঞ্জিকা':
         pushPage(const PanjikaVoiceAssistantScreen());
         return;
 
-      case 'Morning Brief':
+      case 'সকালের খবর':
         pushPage(const MorningBriefScreen());
         return;
 
-      case 'Smart Agenda':
+      case 'দিনের পরিকল্পনা':
         pushPage(const SmartAgendaScreen());
         return;
 
-      case 'Family Board':
+      case 'পরিবারের বোর্ড':
         pushPage(const FamilyUpcomingBoardScreen());
         return;
 
-      case 'Panjika Diary':
+      case 'পঞ্জিকা ডায়েরি':
         pushPage(const PanjikaDiaryScreen());
         return;
 
-      case 'Live Muhurta':
+      case 'চলতি মুহূর্ত':
         pushPage(const LiveMuhurtaRadarScreen());
         return;
 
-      case 'Best Day Finder':
+      case 'শুভ দিন খুঁজুন':
         pushPage(const BestDayFinderScreen());
         return;
 
-      case 'Day Compare':
+      case 'দুই দিনের তুলনা':
         pushPage(const PanchangCompareScreen());
         return;
 
-      case 'Festival Hub':
+      case 'উৎসবের ঘর':
         pushPage(const FestivalHubScreen());
         return;
 
-      case 'Smart Digest':
+      case 'দিনের সারসংক্ষেপ':
         pushPage(const SmartNotificationDigestScreen());
         return;
 
-      case 'Shubho Alarm':
+      case 'শুভ অ্যালার্ম':
         pushPage(const ShubhoAlarmScreen());
         return;
 
-      case 'Sadhana Streak':
+      case 'সাধনার ধারা':
         pushPage(const SadhanaStreakScreen());
         return;
 
-      case 'Family Assistant':
+      case 'পারিবারিক অনুষ্ঠান সহায়ক':
         pushPage(const FamilyOccasionAssistantScreen());
         return;
 
-      case 'Festival Live':
+      case 'উৎসবের সাজ':
         pushPage(const FestivalLiveModeScreen());
         return;
 
-      case 'Reminder Center':
+      case 'সব মনে করানো':
         pushPage(const SmartReminderCenterScreen());
         return;
 
-      case 'Daily Routine':
+      case 'রোজকার নিয়ম':
         pushPage(const DailyRoutineScreen());
         return;
 
-      case 'Year Map':
+      case 'বছরের মানচিত্র':
         pushPage(const MyYearMapScreen());
         return;
 
-      case 'Time Machine':
+      case 'অতীত-ভবিষ্যতের পঞ্জিকা':
         pushPage(const PanchangTimeMachineScreen());
         return;
 
-      case '24H Timeline':
+      case 'আগামী ২৪ ঘণ্টা':
         pushPage(const Next24HoursPanchangScreen());
         return;
 
-      case 'Life Planner':
+      case 'জীবনের পরিকল্পনা':
         pushPage(const BengaliLifePlannerScreen());
         return;
 
-      case 'Travel Planner':
+      case 'যাত্রার শুভক্ষণ':
         pushPage(const TravelPanchangPlannerScreen());
         return;
 
       case 'গৃহ ও বাস্তু':
-      case 'Vastu Hub':
+      case 'গৃহ ও বাস্তু':
         pushPage(const VastuHomeHubScreen());
         return;
 
@@ -29922,104 +32102,104 @@ class SuperServicesScreen extends StatelessWidget {
         pushPage(const VastuDirectionGuideScreen());
         return;
 
-      case 'Room Planner Check':
+      case 'ঘরের অবস্থান':
         pushPage(const VastuRoomPlannerScreen());
         return;
 
-      case 'Main Door & Plot':
+      case 'প্রধান দরজা ও জমি':
         pushPage(const VastuEntranceScreen());
         return;
 
-      case 'Kitchen & Puja':
+      case 'রান্নাঘর ও ঠাকুরঘর':
         pushPage(const VastuKitchenPujaScreen());
         return;
 
-      case 'Bedroom & Study':
+      case 'শোয়ার ও পড়ার ঘর':
         pushPage(const VastuBedroomStudyScreen());
         return;
 
-      case 'Utility Zones':
+      case 'স্নান ও ভাঁড়ার ঘর':
         pushPage(const VastuUtilityScreen());
         return;
 
-      case 'Home Checklist':
+      case 'বাস্তু তালিকা':
         pushPage(const VastuHomeChecklistScreen());
         return;
 
-      case 'Latest 30 Update':
+      case 'নবসংযোজন':
         pushPage(const Phase18Latest30HubScreen());
         return;
 
-      case 'Super 30 Features':
+      case 'পঞ্জিকা জ্ঞানকোষ':
         pushPage(const Super30FeaturesScreen());
         return;
 
-      case 'Daily & Quality Center':
-      case 'Phase 14 Quality':
+      case 'রোজকার সঙ্গী':
+      case 'রোজকার সঙ্গী':
         pushPage(const Phase14QualityCenterScreen());
         return;
 
-      case 'Advanced Moon Center':
+      case 'চাঁদের খবর':
         pushPage(const Phase14AdvancedMoonCenterScreen());
         return;
 
-      case 'Festival Smart Dashboard':
+      case 'উৎসবের পাতা':
         pushPage(const Phase14FestivalSmartDashboardScreen());
         return;
 
-      case 'Puja Step Mode':
+      case 'ধাপে ধাপে পূজা':
         pushPage(const Phase14PujaAssistantScreen());
         return;
 
-      case 'Bengali Ritual Library':
+      case 'আচার-অনুষ্ঠানের বই':
         pushPage(const Phase14RitualLibraryScreen());
         return;
 
-      case 'Family Dashboard 2.0':
+      case 'পরিবারের পাতা':
         pushPage(const Phase14FamilyDashboardScreen());
         return;
 
-      case 'Bengali Year Timeline':
+      case 'বাংলা বছরের পথ':
         pushPage(const Phase14BengaliYearTimelineScreen());
         return;
 
-      case 'Notification Rules':
+      case 'খবর পাঠানোর নিয়ম':
         pushPage(const Phase14NotificationRulesScreen());
         return;
 
-      case 'Widget Pack Pro':
+      case 'উইজেট সংগ্রহ':
         pushPage(const Phase14WidgetPackScreen());
         return;
 
-      case 'Theme Store':
+      case 'সাজ বদল':
         pushPage(const Phase14ThemeStoreScreen());
         return;
 
-      case 'Universal Search 2.0':
+      case 'সব কিছু খুঁজুন':
         pushPage(const Phase14UniversalSearchScreen());
         return;
 
-      case 'Share Studio':
+      case 'ছবি বানিয়ে শেয়ার':
         pushPage(const Phase14ShareStudioScreen());
         return;
 
-      case 'Family Vault':
+      case 'পরিবারের সিন্দুক':
         pushPage(const Phase14FamilyVaultScreen());
         return;
 
-      case 'Performance Center':
+      case 'অ্যাপের গতি':
         pushPage(const Phase14PerformanceCenterScreen());
         return;
 
-      case 'Elder Mode':
+      case 'বড় লেখার মোড':
         pushPage(const Phase14ElderModeScreen());
         return;
 
-      case 'Offline First':
+      case 'ইন্টারনেট ছাড়া':
         pushPage(const Phase14OfflineFirstScreen());
         return;
 
-      case 'Accuracy Center':
+      case 'হিসাবের নির্ভুলতা':
         pushPage(const Phase14AccuracyCenterScreen());
         return;
 
@@ -30027,21 +32207,21 @@ class SuperServicesScreen extends StatelessWidget {
       case 'প্রিমিয়াম ঐতিহ্য ল্যাব':
         pushPage(
           const _PremiumGate(
-            featureTitle: '💎 প্রিমিয়াম ঐতিহ্য ল্যাব',
+            featureTitle: '💎 ঐতিহ্য ল্যাব',
             child: Phase12PremiumHeritageHubScreen(),
           ),
         );
         return;
 
-      case 'World Clock':
+      case 'বিশ্ব ঘড়ি':
         pushPage(const WorldClockScreen());
         return;
 
-      case 'আমার Notes':
+      case 'আমার নোট':
         pushPage(const NotesScreen());
         return;
 
-      case 'Smart Search':
+      case 'খুঁজুন':
         pushPage(SearchScreen());
         return;
 
@@ -30054,27 +32234,27 @@ class SuperServicesScreen extends StatelessWidget {
         );
         return;
 
-      case 'Puja Planner':
+      case 'মন্দির ও পূজা':
         pushPage(const TempleScreen());
         return;
 
-      case 'Festival Countdown':
+      case 'উৎসব কত দিন পরে':
         pushPage(const FestivalCountdownScreen());
         return;
 
-      case 'Daily Share Card':
+      case 'আজকের কার্ড':
         pushPage(const PanchangShareCardScreen());
         return;
 
-      case 'Festival Poster':
+      case 'উৎসবের পোস্টার':
         pushPage(const FestivalPosterScreen());
         return;
 
-      case 'Backup':
+      case 'তথ্য সংরক্ষণ':
         pushPage(const CloudBackupScreen());
         return;
 
-      case 'Settings':
+      case 'সেটিংস':
         pushPage(const SettingsScreen());
         return;
 
@@ -30167,87 +32347,87 @@ class SuperServicesScreen extends StatelessWidget {
       _SuperServiceData('🌿', 'একাদশী'),
       _SuperServiceData('🌕', 'পূর্ণিমা'),
       _SuperServiceData('🌑', 'অমাবস্যা'),
-      _SuperServiceData('📊', 'Month Summary'),
+      _SuperServiceData('📊', 'মাসের হিসাব'),
     ];
 
     const smartDay = [
-      _SuperServiceData('📡', 'Live Muhurta'),
-      _SuperServiceData('🎯', 'Best Day Finder'),
+      _SuperServiceData('📡', 'চলতি মুহূর্ত'),
+      _SuperServiceData('🎯', 'শুভ দিন খুঁজুন'),
       _SuperServiceData('⭐', 'শুভ মুহূর্ত'),
-      _SuperServiceData('⚖️', 'Day Compare'),
-      _SuperServiceData('🔎', 'Smart Search'),
-      _SuperServiceData('🔄', 'Date Converter'),
+      _SuperServiceData('⚖️', 'দুই দিনের তুলনা'),
+      _SuperServiceData('🔎', 'খুঁজুন'),
+      _SuperServiceData('🔄', 'তারিখ বদল'),
     ];
 
     const festival = [
-      _SuperServiceData('🪔', 'Festival Live'),
-      _SuperServiceData('✅', 'Puja Checklist'),
-      _SuperServiceData('🛕', 'Puja Planner'),
+      _SuperServiceData('🪔', 'উৎসবের সাজ'),
+      _SuperServiceData('✅', 'পূজার তালিকা'),
+      _SuperServiceData('🛕', 'মন্দির ও পূজা'),
       _SuperServiceData('🥗', 'উপবাস তথ্য'),
       _SuperServiceData('📖', 'তিথির অর্থ'),
       _SuperServiceData('📿', 'জপ কাউন্টার'),
     ];
 
     const personal = [
-      _SuperServiceData('🎙️', 'Panjika Voice'),
-      _SuperServiceData('🌅', 'Morning Brief'),
-      _SuperServiceData('🗓️', 'Smart Agenda'),
-      _SuperServiceData('👨‍👩‍👧', 'Family Calendar'),
-      _SuperServiceData('📓', 'Panjika Diary'),
-      _SuperServiceData('❤️', 'Favourite Day'),
+      _SuperServiceData('🎙️', 'কথা বলে পঞ্জিকা'),
+      _SuperServiceData('🌅', 'সকালের খবর'),
+      _SuperServiceData('🗓️', 'দিনের পরিকল্পনা'),
+      _SuperServiceData('👨‍👩‍👧', 'পরিবারের ক্যালেন্ডার'),
+      _SuperServiceData('📓', 'পঞ্জিকা ডায়েরি'),
+      _SuperServiceData('❤️', 'প্রিয় দিন'),
     ];
 
     const automation = [
-      _SuperServiceData('🔔', 'Reminder Center'),
-      _SuperServiceData('📨', 'Smart Digest'),
-      _SuperServiceData('⏰', 'Shubho Alarm'),
-      _SuperServiceData('🌿', 'Daily Routine'),
-      _SuperServiceData('🔥', 'Sadhana Streak'),
-      _SuperServiceData('🎁', 'Family Assistant'),
+      _SuperServiceData('🔔', 'সব মনে করানো'),
+      _SuperServiceData('📨', 'দিনের সারসংক্ষেপ'),
+      _SuperServiceData('⏰', 'শুভ অ্যালার্ম'),
+      _SuperServiceData('🌿', 'রোজকার নিয়ম'),
+      _SuperServiceData('🔥', 'সাধনার ধারা'),
+      _SuperServiceData('🎁', 'পারিবারিক অনুষ্ঠান সহায়ক'),
     ];
 
     const insight = [
-      _SuperServiceData('🗺️', 'Year Map'),
-      _SuperServiceData('👨‍👩‍👧', 'Family Board'),
+      _SuperServiceData('🗺️', 'বছরের মানচিত্র'),
+      _SuperServiceData('👨‍👩‍👧', 'পরিবারের বোর্ড'),
       _SuperServiceData('📜', 'ইতিহাস ও মহাপুরুষ'),
-      _SuperServiceData('🕒', 'World Clock'),
-      _SuperServiceData('📱', 'Home Widget'),
-      _SuperServiceData('📝', 'আমার Notes'),
+      _SuperServiceData('🕒', 'বিশ্ব ঘড়ি'),
+      _SuperServiceData('📱', 'হোম স্ক্রিন উইজেট'),
+      _SuperServiceData('📝', 'আমার নোট'),
     ];
 
-    const latest30 = [_SuperServiceData('🆕', 'Latest 30 Update')];
+    const latest30 = [_SuperServiceData('🆕', 'নবসংযোজন')];
 
     const nextGen = [
-      _SuperServiceData('💎', 'Super 30 Features'),
-      _SuperServiceData('🕰️', 'Time Machine'),
-      _SuperServiceData('⏱️', '24H Timeline'),
-      _SuperServiceData('🗓️', 'Life Planner'),
-      _SuperServiceData('🧭', 'Travel Planner'),
+      _SuperServiceData('💎', 'পঞ্জিকা জ্ঞানকোষ'),
+      _SuperServiceData('🕰️', 'অতীত-ভবিষ্যতের পঞ্জিকা'),
+      _SuperServiceData('⏱️', 'আগামী ২৪ ঘণ্টা'),
+      _SuperServiceData('🗓️', 'জীবনের পরিকল্পনা'),
+      _SuperServiceData('🧭', 'যাত্রার শুভক্ষণ'),
     ];
 
     const phase14 = [
-      _SuperServiceData('🚀', 'Daily & Quality Center'),
-      _SuperServiceData('🌙', 'Advanced Moon Center'),
-      _SuperServiceData('🎊', 'Festival Smart Dashboard'),
-      _SuperServiceData('🪔', 'Puja Step Mode'),
-      _SuperServiceData('🔎', 'Universal Search 2.0'),
-      _SuperServiceData('✅', 'Accuracy Center'),
+      _SuperServiceData('🚀', 'রোজকার সঙ্গী'),
+      _SuperServiceData('🌙', 'চাঁদের খবর'),
+      _SuperServiceData('🎊', 'উৎসবের পাতা'),
+      _SuperServiceData('🪔', 'ধাপে ধাপে পূজা'),
+      _SuperServiceData('🔎', 'সব কিছু খুঁজুন'),
+      _SuperServiceData('✅', 'হিসাবের নির্ভুলতা'),
     ];
 
     const vastu = [
       _SuperServiceData('🏠', 'গৃহ ও বাস্তু'),
       _SuperServiceData('🧭', 'দিক ও ব্রহ্মস্থান'),
-      _SuperServiceData('📐', 'Room Planner Check'),
-      _SuperServiceData('🚪', 'Main Door & Plot'),
-      _SuperServiceData('🔥', 'Kitchen & Puja'),
-      _SuperServiceData('✅', 'Home Checklist'),
+      _SuperServiceData('📐', 'ঘরের অবস্থান'),
+      _SuperServiceData('🚪', 'প্রধান দরজা ও জমি'),
+      _SuperServiceData('🔥', 'রান্নাঘর ও ঠাকুরঘর'),
+      _SuperServiceData('✅', 'বাস্তু তালিকা'),
     ];
 
     const create = [
-      _SuperServiceData('🖼️', 'Daily Share Card'),
-      _SuperServiceData('🎨', 'Festival Poster'),
-      _SuperServiceData('☁️', 'Backup'),
-      _SuperServiceData('⚙️', 'Settings'),
+      _SuperServiceData('🖼️', 'আজকের কার্ড'),
+      _SuperServiceData('🎨', 'উৎসবের পোস্টার'),
+      _SuperServiceData('☁️', 'তথ্য সংরক্ষণ'),
+      _SuperServiceData('⚙️', 'সেটিংস'),
     ];
 
     return CosmicBackground(
@@ -30295,16 +32475,16 @@ class SuperServicesScreen extends StatelessWidget {
             const SizedBox(height: 20),
 
             _section(context, '📅 পঞ্জিকা', panjika),
-            _section(context, '🎯 Smart Day Tools', smartDay),
-            _section(context, '🪔 পূজা ও Festival', festival),
-            _section(context, '🧠 Personal Intelligence', personal),
-            _section(context, '⚡ Reminder & Routine', automation),
-            _section(context, '🗺️ Life Overview', insight),
-            _section(context, '🆕 Latest 30 • Phase 18', latest30),
-            _section(context, '🚀 Next-Gen Tools', nextGen),
-            _section(context, '🌟 Daily & Quality 2.0', phase14),
+            _section(context, '🎯 দিন বাছাই', smartDay),
+            _section(context, '🪔 পূজা ও উৎসব', festival),
+            _section(context, '🧠 আমার জন্য', personal),
+            _section(context, '⚡ মনে করানো ও রোজকার', automation),
+            _section(context, '🗺️ জীবনের হিসাব', insight),
+            _section(context, '🆕 নবসংযোজন', latest30),
+            _section(context, '🚀 বিশেষ সুবিধা', nextGen),
+            _section(context, '🌟 রোজকার সঙ্গী', phase14),
             _section(context, '🏠 গৃহ ও বাস্তু', vastu),
-            _section(context, '🎨 Create & Settings', create),
+            _section(context, '🎨 তৈরি ও সেটিংস', create),
           ],
         ),
       ),
@@ -30753,9 +32933,17 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
+      // isScrollControlled ছাড়া bottom sheet পর্দার ৯/১৬ অংশের বেশি
+      // লম্বা হতে পারে না — ভেতরের চিপগুলো বড় ফন্টে ২-৩ সারি হয়ে গেলে
+      // ওই সীমা ছাড়িয়ে "BOTTOM OVERFLOWED" দেখাত। এখন শীটটা দরকারমতো
+      // লম্বা হতে পারে, আর ভেতরটা স্ক্রলও করা যায়।
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
         child: Container(
           margin: const EdgeInsets.all(12),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.8,
+          ),
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
           decoration: BoxDecoration(
             color: const Color(0xFF06162D).withValues(alpha: 0.96),
@@ -30764,112 +32952,125 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
               color: const Color(0xFFFFD36E).withValues(alpha: 0.32),
             ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${bnNum(bDay)} ${info.name} • ${bnNum(date.day)} ${gregMonthBn(date.month)}',
-                style: const TextStyle(
-                  color: Color(0xFFFFD36E),
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${bnNum(bDay)} ${info.name} • ${bnNum(date.day)} ${gregMonthBn(date.month)}',
+                  style: const TextStyle(
+                    color: Color(0xFFFFD36E),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${tithi.paksha} পক্ষ • ${tithi.name}${events.isEmpty ? '' : ' • ${events.first.label}'}',
-                style: const TextStyle(color: Colors.white70, fontSize: 11.5),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _Phase14QuickActionChip(
-                    icon: Icons.alarm_add_rounded,
-                    label: 'Reminder',
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      final when = DateTime(date.year, date.month, date.day, 9);
-                      await ReminderStore.instance.add(
-                        ReminderItem(
-                          '📅 ${bnNum(bDay)} ${info.name} — Calendar reminder',
-                          when,
-                        ),
-                      );
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('রিমাইন্ডার সেভ হয়েছে')),
-                      );
-                    },
-                  ),
-                  _Phase14QuickActionChip(
-                    icon: Icons.note_add_rounded,
-                    label: 'Note',
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const NotesScreen()),
-                      );
-                    },
-                  ),
-                  _Phase14QuickActionChip(
-                    icon: Icons.share_rounded,
-                    label: 'Share',
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      Share.share(
-                        '${bnNum(bDay)} ${info.name} ${bnNum(info.year)}\n'
-                        '${bnNum(date.day)} ${gregMonthBn(date.month)} ${bnNum(date.year)}\n'
-                        '${tithi.paksha} পক্ষ • ${tithi.name}'
-                        '${events.isEmpty ? '' : '\n${events.map((e) => '${e.icon} ${e.label}').join(' • ')}'}',
-                      );
-                    },
-                  ),
-                  _Phase14QuickActionChip(
-                    icon: Icons.local_florist_rounded,
-                    label: 'Puja',
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => Phase14FestivalSmartDashboardScreen(
-                            initialDate: date,
+                const SizedBox(height: 4),
+                Text(
+                  '${tithi.paksha} পক্ষ • ${tithi.name}${events.isEmpty ? '' : ' • ${events.first.label}'}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11.5),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _Phase14QuickActionChip(
+                      icon: Icons.alarm_add_rounded,
+                      label: 'Reminder',
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        final when = DateTime(
+                          date.year,
+                          date.month,
+                          date.day,
+                          9,
+                        );
+                        await ReminderStore.instance.add(
+                          ReminderItem(
+                            '📅 ${bnNum(bDay)} ${info.name} — Calendar reminder',
+                            when,
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                  _Phase14QuickActionChip(
-                    icon: Icons.auto_awesome_rounded,
-                    label: 'Rashi',
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const RashiScreen()),
-                      );
-                    },
-                  ),
-                  _Phase14QuickActionChip(
-                    icon: Icons.wb_sunny_rounded,
-                    label: 'শুভ সময়',
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ShubhoMuhurtaScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ],
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('রিমাইন্ডার সেভ হয়েছে'),
+                          ),
+                        );
+                      },
+                    ),
+                    _Phase14QuickActionChip(
+                      icon: Icons.note_add_rounded,
+                      label: 'Note',
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotesScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    _Phase14QuickActionChip(
+                      icon: Icons.share_rounded,
+                      label: 'Share',
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        shareFromApp(
+                          '${bnNum(bDay)} ${info.name} ${bnNum(info.year)}\n'
+                          '${bnNum(date.day)} ${gregMonthBn(date.month)} ${bnNum(date.year)}\n'
+                          '${tithi.paksha} পক্ষ • ${tithi.name}'
+                          '${events.isEmpty ? '' : '\n${events.map((e) => '${e.icon} ${e.label}').join(' • ')}'}',
+                        );
+                      },
+                    ),
+                    _Phase14QuickActionChip(
+                      icon: Icons.local_florist_rounded,
+                      label: 'Puja',
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => Phase14FestivalSmartDashboardScreen(
+                              initialDate: date,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _Phase14QuickActionChip(
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'Rashi',
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const RashiScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    _Phase14QuickActionChip(
+                      icon: Icons.wb_sunny_rounded,
+                      label: 'শুভ সময়',
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ShubhoMuhurtaScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -31118,8 +33319,9 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                           crossAxisCount: 7,
                           mainAxisSpacing: 4,
                           crossAxisSpacing: 4,
-                          // ঘর চৌকো — চওড়া যত, উচ্চতাও প্রায় তত।
-                          // লেখা বড় করা থাকলে ঘরও সেই অনুপাতে বড় হয়।
+                          // ঘরে এখন শুধু তারিখ ও (থাকলে) উৎসবের নাম —
+                          // তিথি-নক্ষত্র সরিয়ে দেওয়ায় কম উচ্চতাতেই হয়,
+                          // ঘরও চৌকোর কাছাকাছি আসে।
                           childAspectRatio: 1 / (1.30 * _tsFactor(context)),
                         ),
                         itemBuilder: (context, i) {
@@ -31501,7 +33703,7 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    '📍 তিথি, নক্ষত্র, চন্দ্র রাশি, সূর্যোদয়/অস্ত ও রাহুকাল সরাসরি হিসেব করে দেখানো হয় (আনুমানিক নির্ভুলতা)। বিবাহ/অন্নপ্রাশন/গৃহপ্রবেশের শুভ তারিখগুলো ২০২৬ সালের নমুনা তালিকা — সঠিক শুভ মুহূর্তের জন্য একজন জ্যোতিষীর পরামর্শ নেওয়া ভালো।',
+                    '📍 তিথি, নক্ষত্র, চন্দ্র রাশি, সূর্যোদয়/অস্ত ও রাহুকাল সরাসরি হিসেব করে দেখানো হয় (আনুমানিক নির্ভুলতা)। বিবাহ, অন্নপ্রাশন ও গৃহপ্রবেশের শুভ দিনও তিথি-নক্ষত্র থেকেই বের করা। তবু বিশেষ কোনো অনুষ্ঠানের চূড়ান্ত লগ্ন ঠিক করার আগে একজন জ্যোতিষীর পরামর্শ নেওয়া ভালো।',
                     style: TextStyle(
                       color: Colors.white60,
                       fontSize: 12,
@@ -31826,6 +34028,35 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
     super.dispose();
   }
 
+  /// ঘরের কোণে কোন চিহ্নটা বসবে। ছাপা পঞ্জিকার মতো চাঁদ ও একাদশীর
+  /// চিহ্ন আগে — একই দিনে উৎসবও থাকলে উৎসবের নাম নিচের লাইনে দেখা যায়,
+  /// তাই কোণটা তিথির চিহ্নের জন্য রাখা হলো।
+  CalendarEvent? _markerEvent(List<CalendarEvent> events) {
+    for (final cat in const ['purnima', 'amabasya', 'ekadashi']) {
+      for (final e in events) {
+        if (e.category == cat) return e;
+      }
+    }
+    return events.isNotEmpty ? events.first : null;
+  }
+
+  /// ঘরের নিচে দেখানোর জন্য উৎসবের নাম। বিকল্প নাম থাকলে (যেমন
+  /// "কালীপূজা / দীপাবলি") প্রথমটুকুই নেওয়া হয়, নাহলে ছোট ঘরে ঢোকে না।
+  String _cellEventLabel(List<CalendarEvent> events) {
+    CalendarEvent? pick;
+    for (final e in events) {
+      if (e.category != 'purnima' &&
+          e.category != 'amabasya' &&
+          e.category != 'ekadashi') {
+        pick = e;
+        break;
+      }
+    }
+    pick ??= events.isNotEmpty ? events.first : null;
+    if (pick == null) return '';
+    return pick.label.split('/').first.split('—').first.trim();
+  }
+
   Widget _specialIcon(CalendarEvent event) {
     switch (event.category) {
       case 'amabasya':
@@ -31871,7 +34102,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
   @override
   Widget build(BuildContext context) {
     final events = widget.events;
-    final primaryEvent = events.isNotEmpty ? events.first : null;
+    final markerEvent = _markerEvent(events);
 
     final categoryColor = widget.primaryCategoryColor(
       events,
@@ -31926,7 +34157,17 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
 
     final movingText = movingItems[_infoIndex % movingItems.length];
 
-    final staticInfo = '$nakshatra \u2022 $rashi';
+    // উৎসব থাকলে নিচের লাইনে নক্ষত্র-রাশির বদলে উৎসবের নামই দেখানো হয় —
+    // মাসের পাতা দেখেই কবে কী বোঝা যায়, ছাপা পঞ্জিকার মতো।
+    final cellEventLabel = _cellEventLabel(events);
+    final hasEventLabel = cellEventLabel.isNotEmpty;
+    // নক্ষত্র + রাশি ("উত্তরভাদ্রপদ • মীন") ঘরে লিখতে ১৬৪ পিক্সেল লাগে —
+    // ৪ পিক্সেলে নেমে গিয়ে শুধু ঝাপসা দাগ দেখাত। তাই ঘরে আর দেখানো হয় না;
+    // দিনের ঘরে চাপ দিলে বিস্তারিততে নক্ষত্র-রাশি সবই আছে।
+    final staticInfo = hasEventLabel ? cellEventLabel : '';
+    final staticColor = hasEventLabel
+        ? (categoryColor ?? const Color(0xFFE0384A))
+        : Colors.white70;
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -31971,11 +34212,13 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                           '${widget.greg.day} $monthShort',
                           maxLines: 1,
                           style: TextStyle(
-                            fontSize: 8.2,
+                            fontSize: 9.8,
                             height: 1,
                             fontWeight: FontWeight.w800,
-                            color: widget.isSunday
-                                ? const Color(0xFFFF8A80)
+                            // রবিবার বা বিশেষ দিন হলে ইংরেজি তারিখও
+                            // সেই দিনের রঙেই — ঘরটা এক রঙে মেলে
+                            color: (widget.isSunday || categoryColor != null)
+                                ? numberColor.withValues(alpha: 0.85)
                                 : Colors.white70,
                           ),
                         ),
@@ -31985,39 +34228,33 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
 
                       Expanded(
                         child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              widget.bnDay,
-                              style: TextStyle(
-                                fontSize: 36,
-                                height: 0.90,
-                                fontWeight: FontWeight.w900,
-                                color: numberColor,
-                              ),
+                          // FittedBox নয় — FittedBox প্রতিটা সংখ্যাকে তার
+                          // নিজের চওড়া অনুযায়ী আলাদা মাপে বসায়, তাই '৫'
+                          // বড় আর '২৫' ছোট দেখাত। স্থির fontSize দিলে
+                          // ক্যালেন্ডারের সব তারিখ ঠিক একই মাপের হয়।
+                          child: Text(
+                            widget.bnDay,
+                            maxLines: 1,
+                            softWrap: false,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 23,
+                              height: 1.0,
+                              fontWeight: FontWeight.w900,
+                              color: numberColor,
                             ),
                           ),
                         ),
                       ),
 
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '${tithi.paksha} ${tithi.name}',
-                          maxLines: 1,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            height: 1,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 2),
-
+                      // ঘরে তিথির সংখ্যা ("শু ১২") আর দেখানো হয় না —
+                      // ঘরটা পরিষ্কার রাখাই বেশি জরুরি। তিথি, নক্ষত্র,
+                      // যোগ, করণ সবই দিনের ঘরে চাপ দিলে বিস্তারিততে আছে।
                       SizedBox(
-                        height: 14,
+                        // উৎসব না থাকলে নিচের লাইনটা ফাঁকা — তখন জায়গাটা
+                        // বড় তারিখের সংখ্যাকে দিয়ে দেওয়া হয়, যাতে সংখ্যাটা
+                        // আরও বড় ও স্পষ্ট দেখায়।
+                        height: (widget.isToday || hasEventLabel) ? 17 : 0,
                         width: double.infinity,
                         child: widget.isToday
                             ? AnimatedSwitcher(
@@ -32046,7 +34283,7 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                                       movingText,
                                       maxLines: 1,
                                       style: const TextStyle(
-                                        fontSize: 9.6,
+                                        fontSize: 11.5,
                                         height: 1,
                                         fontWeight: FontWeight.w600,
                                         color: Colors.white70,
@@ -32061,11 +34298,13 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
                                   child: Text(
                                     staticInfo,
                                     maxLines: 1,
-                                    style: const TextStyle(
-                                      fontSize: 9.6,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
                                       height: 1,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white70,
+                                      fontWeight: hasEventLabel
+                                          ? FontWeight.w800
+                                          : FontWeight.w600,
+                                      color: staticColor,
                                     ),
                                   ),
                                 ),
@@ -32077,14 +34316,14 @@ class _CalendarDayCellState extends State<_CalendarDayCell> {
 
                 // Special-day icon only.
                 // Normal days stay clean.
-                if (primaryEvent != null)
+                if (markerEvent != null)
                   Positioned(
                     left: 3,
                     top: 3,
                     child: SizedBox(
                       width: 14,
                       height: 14,
-                      child: Center(child: _specialIcon(primaryEvent)),
+                      child: Center(child: _specialIcon(markerEvent)),
                     ),
                   ),
               ],
@@ -33600,13 +35839,17 @@ class _ShubhoMuhurtaScreenState extends State<ShubhoMuhurtaScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                '${date.day}/${date.month}/${date.year} • '
-                                '${PanchangCalculator.weekdayName(date)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
+                              Flexible(
+                                child: Text(
+                                  '${date.day}/${date.month}/${date.year} • '
+                                  '${PanchangCalculator.weekdayName(date)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                  ),
                                 ),
                               ),
                               Text(
@@ -34515,8 +36758,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 const Text(
-                  'ভাষা',
+                  'সংখ্যা ও মাসের নাম',
                   style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'অ্যাপের সব লেখা বাংলাতেই থাকবে — এখানে শুধু সংখ্যা আর '
+                  'ইংরেজি মাসের নাম কোন হরফে দেখাবে সেটা ঠিক করা যায়।',
+                  style: TextStyle(color: Colors.white38, fontSize: 11.5),
                 ),
                 const SizedBox(height: 8),
                 Container(
@@ -34526,30 +36775,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: DropdownButton<String>(
-                    value: _lang,
+                    // আগে 'Hindi'-ও ছিল, কিন্তু সেটা বাছলে কিছুই বদলাত না।
+                    // পুরনো ফোনে 'Hindi' সেভ করা থাকলে তালিকায় না থাকায়
+                    // অ্যাপ ভেঙে যেত — তাই সেক্ষেত্রে বাংলা ধরা হয়।
+                    value: const ['বাংলা', 'English'].contains(_lang)
+                        ? _lang
+                        : 'বাংলা',
                     dropdownColor: const Color(0xFF0B1B35),
                     isExpanded: true,
                     underline: const SizedBox(),
                     style: const TextStyle(color: Colors.white),
-                    items: ['বাংলা', 'Hindi', 'English']
-                        .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                        .toList(),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'বাংলা',
+                        child: Text('বাংলা হরফে — ১২৩, সেপ্টেম্বর'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'English',
+                        child: Text('ইংরেজি হরফে — 123, September'),
+                      ),
+                    ],
                     onChanged: (v) => setState(() => _lang = v ?? _lang),
                   ),
                 ),
                 const SizedBox(height: 16),
                 _switchTile(
-                  '📍 Live Location Weather',
+                  '📍 এলাকা অনুযায়ী আবহাওয়া',
                   _weather,
                   (v) => setState(() => _weather = v),
                 ),
                 _switchTile(
-                  '🌌 Live Sky Animation',
+                  '🌌 চলন্ত আকাশের ছবি',
                   _skyAnim,
                   (v) => setState(() => _skyAnim = v),
                 ),
                 _switchTile(
-                  '🔔 Notifications',
+                  '🔔 নোটিফিকেশন',
                   _notifications,
                   (v) => setState(() => _notifications = v),
                 ),
@@ -34594,6 +36855,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                // ব্যবহারকারী নিজে থেকে রেটিং দিতে চাইলে — Play Store-এ
+                // রেটিং ও রিভিউয়ের সংখ্যাই সার্চে অ্যাপটাকে উপরে তোলে
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF08172F).withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFFFFD36E).withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '⭐ অ্যাপটা ভালো লাগছে?',
+                        style: TextStyle(
+                          color: Color(0xFFFFD36E),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14.5,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Play Store-এ একটা রেটিং দিলে আরও অনেকে বাংলা '
+                        'পঞ্জিকাটা খুঁজে পাবেন। এক মিনিটের কাজ।',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12.5,
+                          height: 1.55,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              AppRating.instance.openStoreListing(),
+                          icon: const Icon(
+                            Icons.star_rounded,
+                            color: Color(0xFFFFD36E),
+                            size: 19,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFFFFD36E)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          label: const Text(
+                            'রেটিং দিন',
+                            style: TextStyle(
+                              color: Color(0xFFFFD36E),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -34653,7 +36974,6 @@ final List<_PremiumFeature> _premiumFeatures = [
     'জ্যোতিষী পরামর্শ বুকিং',
     () => const AstrologerBookingScreen(),
   ),
-  const _PremiumFeature('🚫', 'বিজ্ঞাপনমুক্ত অভিজ্ঞতা'),
 ];
 
 // =====================================================================
@@ -34739,25 +37059,26 @@ class _MemberDetailsCardState extends State<_MemberDetailsCard> {
                 ),
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color:
-                    (s.isPremiumActive
-                            ? const Color(0xFF1D6E3A)
-                            : const Color(0xFF6E5A1D))
-                        .withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                s.isPremiumActive ? 'সক্রিয় প্ল্যান' : 'ফ্রি ট্রায়াল',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.bold,
+            if (!AppSettings.freeForEveryone)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color:
+                      (s.isPremiumActive
+                              ? const Color(0xFF1D6E3A)
+                              : const Color(0xFF6E5A1D))
+                          .withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  s.isPremiumActive ? 'সক্রিয় প্ল্যান' : 'ফ্রি ট্রায়াল',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
             const SizedBox(width: 6),
             IconButton(
               onPressed: () => setState(() => _editing = true),
@@ -35052,8 +37373,8 @@ class _PremiumScreenState extends State<PremiumScreen> {
     final msg = !s.trialActivated
         ? '🔒 আগে উপরের ৩০ দিনের ফ্রি ট্রায়াল শুরু করুন।'
         : (s.inTrialPeriod
-              ? '🔒 এই Premium feature এখন খোলা থাকার কথা — আবার চেষ্টা করুন।'
-              : '🔒 ফ্রি ট্রায়াল শেষ। উপরের Premium plan সক্রিয় করুন।');
+              ? '🔒 এই প্রিমিয়াম সুবিধা এখন খোলা থাকার কথা — আবার চেষ্টা করুন।'
+              : '🔒 ফ্রি ট্রায়াল শেষ। উপরের প্রিমিয়াম প্ল্যান সক্রিয় করুন।');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
     );
@@ -35092,7 +37413,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '👑 Premium Access সক্রিয়',
+              '👑 প্রিমিয়াম Access সক্রিয়',
               style: TextStyle(
                 color: Color(0xFFFFD36E),
                 fontWeight: FontWeight.w900,
@@ -35101,7 +37422,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
             ),
             const SizedBox(height: 5),
             const Text(
-              'Premium Classics + Heritage tools সব এখান থেকেই খুলুন।',
+              'প্রিমিয়াম Classics + Heritage tools সব এখান থেকেই খুলুন।',
               style: TextStyle(color: Colors.white70, fontSize: 12.5),
             ),
             if (s.premiumExpiry != null) ...[
@@ -35125,7 +37446,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
           borderRadius: BorderRadius.circular(18),
         ),
         child: const Text(
-          'Premium কেনার সুবিধা এখন মোবাইল অ্যাপে পাওয়া যায়। Android/iOS app থেকে plan সক্রিয় করুন।',
+          'প্রিমিয়াম কেনার সুবিধা এখন মোবাইল অ্যাপে পাওয়া যায়। Android/iOS app থেকে প্ল্যান সক্রিয় করুন।',
           style: TextStyle(color: Colors.white70, height: 1.4),
         ),
       );
@@ -35149,8 +37470,8 @@ class _PremiumScreenState extends State<PremiumScreen> {
       ),
       child: Text(
         s.inTrialPeriod
-            ? '🎁 ফ্রি ট্রায়াল চলছে — আর ${bnNum(s.trialDaysLeft)} দিন Premium Center-এর সব tool ব্যবহার করতে পারবেন।'
-            : '🔒 ৩০ দিনের ফ্রি ট্রায়াল শেষ। Premium tools চালিয়ে যেতে উপরের plan সক্রিয় করুন।',
+            ? '🎁 ফ্রি ট্রায়াল চলছে — আর ${bnNum(s.trialDaysLeft)} দিন প্রিমিয়াম Center-এর সব tool ব্যবহার করতে পারবেন।'
+            : '🔒 ৩০ দিনের ফ্রি ট্রায়াল শেষ। প্রিমিয়াম tools চালিয়ে যেতে উপরের প্ল্যান সক্রিয় করুন।',
         style: const TextStyle(
           color: Colors.white,
           fontSize: 12.5,
@@ -35209,7 +37530,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '🌌 Live Solar System',
+                    '🌌 চলন্ত সৌরজগৎ',
                     style: TextStyle(
                       color: Color(0xFFFFD36E),
                       fontWeight: FontWeight.w900,
@@ -35244,7 +37565,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
     return InkWell(
       onTap: () => _openPremiumPage(
         s,
-        '💎 Premium Heritage Lab',
+        '💎 ঐতিহ্য ল্যাব',
         () => const Phase12PremiumHeritageHubScreen(),
       ),
       borderRadius: BorderRadius.circular(20),
@@ -35285,7 +37606,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Premium Heritage Lab',
+                    'ঐতিহ্যের ঘর',
                     style: TextStyle(
                       color: Color(0xFFFFD36E),
                       fontWeight: FontWeight.w900,
@@ -35294,7 +37615,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                   ),
                   SizedBox(height: 4),
                   Text(
-                    'হোরা • ঘটি-পলা • Time Capsule • ব্রত • Family Tradition • Budget',
+                    'হোরা • ঘটি-পলা • সময়ের সিন্দুক • ব্রত • পারিবারিক রীতি • Budget',
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 10.5,
@@ -35459,27 +37780,34 @@ class _PremiumScreenState extends State<PremiumScreen> {
         return CosmicBackground(
           child: Column(
             children: [
-              const _ScreenHeader(title: '💎 প্রিমিয়াম সেন্টার'),
+              const _ScreenHeader(title: '💎 বিশেষ সংগ্রহ'),
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 30),
                   children: [
                     if (s.memberId.isNotEmpty) ...[
                       _MemberDetailsCard(
-                        showPlans: !isPremium && !kIsWeb,
+                        showPlans:
+                            !AppSettings.freeForEveryone &&
+                            !isPremium &&
+                            !kIsWeb,
                         processing: _processing,
                         selectedPlan: _selectedPlan,
                         onBuyPlan: _startPayment,
                       ),
                       const SizedBox(height: 14),
                     ],
-                    _statusCard(s),
-                    const SizedBox(height: 18),
+                    // সবার জন্য সব খোলা থাকলে প্ল্যান/ট্রায়ালের
+                    // স্ট্যাটাস দেখানোর কিছু নেই
+                    if (!AppSettings.freeForEveryone) ...[
+                      _statusCard(s),
+                      const SizedBox(height: 18),
+                    ],
                     Phase14PremiumDashboardCard(unlocked: s.hasPremiumAccess),
                     const SizedBox(height: 14),
                     const SizedBox(height: 8),
                     const Text(
-                      '💎 Premium Heritage',
+                      '💎 ঐতিহ্য',
                       style: TextStyle(
                         color: Color(0xFFFFD36E),
                         fontWeight: FontWeight.w900,
@@ -35488,7 +37816,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                     ),
                     const SizedBox(height: 5),
                     const Text(
-                      'নতুন Premium tools এখন নিচের Premium button-এর এই এক জায়গাতেই।',
+                      'ঐতিহ্যভিত্তিক সব সুবিধা এই এক জায়গাতেই।',
                       style: TextStyle(color: Colors.white60, fontSize: 11.5),
                     ),
                     const SizedBox(height: 10),
@@ -35497,7 +37825,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                     _heritageGrid(s),
                     const SizedBox(height: 22),
                     const Text(
-                      '✨ Premium Classics',
+                      '✨ বাছাই করা',
                       style: TextStyle(
                         color: Color(0xFFFFD36E),
                         fontWeight: FontWeight.w900,
@@ -35514,7 +37842,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Text(
-                        'Premium Heritage-এর হোরা/ঘটি/প্রহর ও অন্যান্য ঐতিহ্যভিত্তিক tool সাংস্কৃতিক সহায়ক হিসেবে দেখানো হয়। স্বাস্থ্য, অর্থ, নিরাপত্তা বা নির্মাণের সিদ্ধান্তে বাস্তব বিশেষজ্ঞের পরামর্শকে অগ্রাধিকার দিন।',
+                        'হোরা, ঘটি-পলা, প্রহর ও অন্যান্য ঐতিহ্যভিত্তিক সুবিধা সাংস্কৃতিক সহায়ক হিসেবে দেখানো হয়। স্বাস্থ্য, অর্থ, নিরাপত্তা বা নির্মাণের সিদ্ধান্তে বাস্তব বিশেষজ্ঞের পরামর্শকে অগ্রাধিকার দিন।',
                         style: TextStyle(
                           color: Colors.white54,
                           fontSize: 10.3,
@@ -35809,7 +38137,7 @@ class _Phase15AmbientSolarStripState extends State<Phase15AmbientSolarStrip>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    '🌌 মহাকাশ • LIVE',
+                    '🌌 মহাকাশ • সরাসরি',
                     style: TextStyle(
                       color: Color(0xFFFFD36E),
                       fontSize: 12.5,
@@ -35928,7 +38256,7 @@ class _Phase15LiveSolarSystemScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🌌 Live Solar System'),
+          const _ScreenHeader(title: '🌌 চলন্ত সৌরজগৎ'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(14, 5, 14, 30),
@@ -35952,7 +38280,7 @@ class _Phase15LiveSolarSystemScreenState
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'DATE-BASED ORBIT MODEL',
+                              'তারিখ অনুযায়ী কক্ষপথের হিসাব',
                               style: TextStyle(
                                 color: Color(0xFFFFD36E),
                                 fontSize: 10.5,
@@ -36040,7 +38368,7 @@ class _Phase15LiveSolarSystemScreenState
                         value: _cinematicMotion,
                         onChanged: (v) => setState(() => _cinematicMotion = v),
                         title: const Text(
-                          'Orbit Motion',
+                          'কক্ষপথের চলন',
                           style: TextStyle(color: Colors.white, fontSize: 11.5),
                         ),
                         subtitle: const Text(
@@ -36058,7 +38386,7 @@ class _Phase15LiveSolarSystemScreenState
                         value: _labels,
                         onChanged: (v) => setState(() => _labels = v),
                         title: const Text(
-                          'Planet Labels',
+                          'গ্রহের নাম',
                           style: TextStyle(color: Colors.white, fontSize: 11.5),
                         ),
                       ),
@@ -36758,136 +39086,150 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    // ------- সদস্যপদ স্ট্যাটাস (ফ্রি ট্রায়াল / প্রিমিয়াম) -------
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF08172F).withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
+                    // প্রোফাইলে শুধু নাম, জন্ম তারিখ ও ঠিকানা থাকবে —
+                    // সবার জন্য সব সুবিধা খোলা থাকলে সদস্যপদের
+                    // স্ট্যাটাস দেখানোর কিছু নেই, তাই পুরো ব্লকটা লুকানো।
+                    // কোড অক্ষত আছে; freeForEveryone = false করলেই ফিরে আসবে।
+                    if (!AppSettings.freeForEveryone) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
                           color: const Color(
-                            0xFFFFD36E,
-                          ).withValues(alpha: 0.25),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.isPremiumActive
-                                ? '✨ প্রিমিয়াম সদস্য'
-                                : (s.inTrialPeriod
-                                      ? '🎁 ফ্রি ট্রায়াল চলছে'
-                                      : (s.trialActivated
-                                            ? '🔒 ফ্রি ট্রায়াল শেষ'
-                                            : '🎁 ফ্রি ট্রায়াল এখনো শুরু হয়নি')),
-                            style: const TextStyle(
-                              color: Color(0xFFFFD36E),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
+                            0xFF08172F,
+                          ).withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(
+                              0xFFFFD36E,
+                            ).withValues(alpha: 0.25),
                           ),
-                          const SizedBox(height: 6),
-                          if (s.memberId.isNotEmpty) ...[
-                            Row(
-                              children: [
-                                Text(
-                                  'সদস্য আইডি: ${s.memberId}',
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        (s.isPremiumActive
-                                                ? const Color(0xFF1D6E3A)
-                                                : const Color(0xFF6E5A1D))
-                                            .withValues(alpha: 0.6),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    s.isPremiumActive
-                                        ? 'সক্রিয় প্ল্যান'
-                                        : 'ফ্রি ট্রায়াল',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.bold,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              s.isPremiumActive
+                                  ? '✨ প্রিমিয়াম সদস্য'
+                                  : (s.inTrialPeriod
+                                        ? '🎁 ফ্রি ট্রায়াল চলছে'
+                                        : (s.trialActivated
+                                              ? '🔒 ফ্রি ট্রায়াল শেষ'
+                                              : '🎁 ফ্রি ট্রায়াল এখনো শুরু হয়নি')),
+                              style: const TextStyle(
+                                color: Color(0xFFFFD36E),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            if (s.memberId.isNotEmpty) ...[
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      'সদস্য আইডি: ${s.memberId}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          (s.isPremiumActive
+                                                  ? const Color(0xFF1D6E3A)
+                                                  : const Color(0xFF6E5A1D))
+                                              .withValues(alpha: 0.6),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      s.isPremiumActive
+                                          ? 'সক্রিয় প্ল্যান'
+                                          : 'ফ্রি ট্রায়াল',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                            ],
+                            if (s.isPremiumActive) ...[
+                              if (s.premiumExpiry != null)
+                                Text(
+                                  'মেয়াদ শেষ: ${s.premiumExpiry!.day}/${s.premiumExpiry!.month}/${s.premiumExpiry!.year}',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12.5,
+                                  ),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                          ],
-                          if (s.isPremiumActive) ...[
-                            if (s.premiumExpiry != null)
+                            ] else if (s.inTrialPeriod)
                               Text(
-                                'মেয়াদ শেষ: ${s.premiumExpiry!.day}/${s.premiumExpiry!.month}/${s.premiumExpiry!.year}',
+                                'আর ${bnNum(s.trialDaysLeft)} দিন সব ফিচার বিনামূল্যে ব্যবহার করতে পারবেন।',
                                 style: const TextStyle(
                                   color: Colors.white70,
                                   fontSize: 12.5,
+                                  height: 1.5,
+                                ),
+                              )
+                            else if (s.trialActivated)
+                              const Text(
+                                'কুষ্ঠি চার্ট, PDF এক্সপোর্ট, ক্লাউড ব্যাকআপ ও জ্যোতিষী বুকিং এখন প্রিমিয়াম প্ল্যানের সাথে পাওয়া যাবে।',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12.5,
+                                  height: 1.5,
+                                ),
+                              )
+                            else
+                              const Text(
+                                'কুষ্ঠি চার্ট, PDF এক্সপোর্ট, ক্লাউড ব্যাকআপ বা জ্যোতিষী বুকিং — যেকোনো একটা খুললেই নাম/জন্ম তারিখ/ঠিকানা দিয়ে ৩০ দিনের ফ্রি ট্রায়াল শুরু করতে পারবেন।',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12.5,
+                                  height: 1.5,
                                 ),
                               ),
-                          ] else if (s.inTrialPeriod)
-                            Text(
-                              'আর ${bnNum(s.trialDaysLeft)} দিন সব ফিচার বিনামূল্যে ব্যবহার করতে পারবেন।',
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12.5,
-                                height: 1.5,
-                              ),
-                            )
-                          else if (s.trialActivated)
-                            const Text(
-                              'কুষ্ঠি চার্ট, PDF এক্সপোর্ট, ক্লাউড ব্যাকআপ ও জ্যোতিষী বুকিং এখন প্রিমিয়াম প্ল্যানের সাথে পাওয়া যাবে।',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12.5,
-                                height: 1.5,
-                              ),
-                            )
-                          else
-                            const Text(
-                              'কুষ্ঠি চার্ট, PDF এক্সপোর্ট, ক্লাউড ব্যাকআপ বা জ্যোতিষী বুকিং — যেকোনো একটা খুললেই নাম/জন্ম তারিখ/ঠিকানা দিয়ে ৩০ দিনের ফ্রি ট্রায়াল শুরু করতে পারবেন।',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12.5,
-                                height: 1.5,
-                              ),
-                            ),
-                          if (!s.isPremiumActive) ...[
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton(
-                                onPressed: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const PremiumScreen(),
+                            if (!AppSettings.freeForEveryone &&
+                                !s.isPremiumActive) ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton(
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const PremiumScreen(),
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(
+                                      color: Color(0xFFFFD36E),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'প্রিমিয়াম প্ল্যান দেখুন',
+                                    style: TextStyle(color: Color(0xFFFFD36E)),
                                   ),
                                 ),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                    color: Color(0xFFFFD36E),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'প্রিমিয়াম প্ল্যান দেখুন',
-                                  style: TextStyle(color: Color(0xFFFFD36E)),
-                                ),
                               ),
-                            ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 18),
+                      const SizedBox(height: 18),
+                    ],
                     const Text(
                       'নাম',
                       style: TextStyle(color: Colors.white70, fontSize: 13),
@@ -37034,7 +39376,7 @@ class _Phase12PremiumHeritageHomeCard extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (_) => const _PremiumGate(
-                featureTitle: '💎 প্রিমিয়াম ঐতিহ্য ল্যাব',
+                featureTitle: '💎 ঐতিহ্য ল্যাব',
                 child: Phase12PremiumHeritageHubScreen(),
               ),
             ),
@@ -37077,7 +39419,7 @@ class _Phase12PremiumHeritageHomeCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'PREMIUM • ঐতিহ্য ল্যাব',
+                        'ঐতিহ্য ল্যাব',
                         style: TextStyle(
                           color: Color(0xFFFFD36E),
                           fontSize: 14.5,
@@ -37086,7 +39428,7 @@ class _Phase12PremiumHeritageHomeCard extends StatelessWidget {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'হোরা • ঘটি-পলা • Time Capsule • ব্রত • Family Tradition • Budget',
+                        'হোরা • ঘটি-পলা • সময়ের সিন্দুক • ব্রত • পারিবারিক রীতি • Budget',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 10.5,
@@ -37134,13 +39476,13 @@ const List<_Phase12PremiumFeature> _phase12PremiumFeatures = [
   _Phase12PremiumFeature(
     'capsule',
     '🧿',
-    'পঞ্জিকা Time Capsule',
+    'পঞ্জিকা সময়ের সিন্দুক',
     'বিশেষ দিনের তিথি-নক্ষত্র-রাশি ও নিজের নোট সেভ',
   ),
   _Phase12PremiumFeature(
     'prep',
     '🎊',
-    'Festival প্রস্তুতি Timeline',
+    'উৎসব প্রস্তুতি Timeline',
     'পরের উৎসবের ৭/৩/১ দিন আগে প্রস্তুতি পরিকল্পনা',
   ),
   _Phase12PremiumFeature(
@@ -37165,7 +39507,7 @@ const List<_Phase12PremiumFeature> _phase12PremiumFeatures = [
     'seva',
     '🤲',
     'সেবা ও দান Ledger',
-    'নিজের দান/সেবার ব্যক্তিগত হিসাব ও note',
+    'নিজের দান/সেবার ব্যক্তিগত হিসাব ও নোট',
   ),
   _Phase12PremiumFeature(
     'budget',
@@ -37177,7 +39519,7 @@ const List<_Phase12PremiumFeature> _phase12PremiumFeatures = [
     'golden',
     '🌅',
     'Sunlight Window Planner',
-    'সূর্যোদয়/অস্ত ঘিরে শান্ত সকাল-সন্ধ্যার আনুমানিক window',
+    'সূর্যোদয়/অস্ত ঘিরে শান্ত সকাল-সন্ধ্যার আনুমানিক সময়',
   ),
 ];
 
@@ -37189,7 +39531,7 @@ class Phase12PremiumHeritageHubScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '💎 প্রিমিয়াম ঐতিহ্য ল্যাব'),
+          const _ScreenHeader(title: '💎 ঐতিহ্য ল্যাব'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 30),
@@ -37204,7 +39546,7 @@ class Phase12PremiumHeritageHubScreen extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'AI ছাড়া • Rule-based • Offline-friendly\nপুরনো feature repeat নয় — বাংলা পঞ্জিকা ও পারিবারিক ঐতিহ্যের জন্য ১০টি নতুন Premium tool।',
+                    'AI ছাড়া • Rule-based • Offline-friendly\nবাংলা পঞ্জিকা ও পারিবারিক ঐতিহ্যের জন্য ১০টি আলাদা সুবিধা।',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 12.5,
@@ -37631,25 +39973,30 @@ class _Phase12PremiumFeatureScreenState
     DateTime blockEnd;
     int weekday;
     int segment;
-    if (now.isBefore(sunToday.sunrise)) {
-      blockStart = sunPrev.sunset;
-      blockEnd = sunToday.sunrise;
+    // হোরার হিসেব প্রকৃত মুহূর্ত ধরে করতে হয়
+    final riseToday = panchangInstant(sunToday.sunrise);
+    final setToday = panchangInstant(sunToday.sunset);
+    final setPrev = panchangInstant(sunPrev.sunset);
+    final riseNext = panchangInstant(sunNext.sunrise);
+    if (now.isBefore(riseToday)) {
+      blockStart = setPrev;
+      blockEnd = riseToday;
       weekday = prev.weekday;
       final minutes = now.difference(blockStart).inMilliseconds / 60000.0;
       final part =
           blockEnd.difference(blockStart).inMilliseconds / 60000.0 / 12.0;
       segment = (minutes / part).floor().clamp(0, 11).toInt() + 12;
-    } else if (now.isBefore(sunToday.sunset)) {
-      blockStart = sunToday.sunrise;
-      blockEnd = sunToday.sunset;
+    } else if (now.isBefore(setToday)) {
+      blockStart = riseToday;
+      blockEnd = setToday;
       weekday = today.weekday;
       final minutes = now.difference(blockStart).inMilliseconds / 60000.0;
       final part =
           blockEnd.difference(blockStart).inMilliseconds / 60000.0 / 12.0;
       segment = (minutes / part).floor().clamp(0, 11).toInt();
     } else {
-      blockStart = sunToday.sunset;
-      blockEnd = sunNext.sunrise;
+      blockStart = setToday;
+      blockEnd = riseNext;
       weekday = today.weekday;
       final minutes = now.difference(blockStart).inMilliseconds / 60000.0;
       final part =
@@ -37682,14 +40029,16 @@ class _Phase12PremiumFeatureScreenState
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    DateTime baseSunrise = sun.sunrise;
+    DateTime baseSunrise = panchangInstant(sun.sunrise);
     if (_now.isBefore(baseSunrise)) {
       final prev = today.subtract(const Duration(days: 1));
-      baseSunrise = PanchangCalculator.sunTimes(
-        prev,
-        lat: AppLocation.lat,
-        lon: AppLocation.lon,
-      ).sunrise;
+      baseSunrise = panchangInstant(
+        PanchangCalculator.sunTimes(
+          prev,
+          lat: AppLocation.lat,
+          lon: AppLocation.lon,
+        ).sunrise,
+      );
     }
     final secs = _now.difference(baseSunrise).inSeconds % 86400;
     final ghati = secs ~/ (24 * 60);
@@ -37701,10 +40050,12 @@ class _Phase12PremiumFeatureScreenState
       lon: AppLocation.lon,
     );
     String prahar;
-    if (!_now.isBefore(sunNow.sunrise) && _now.isBefore(sunNow.sunset)) {
-      final dayMs = sunNow.sunset.difference(sunNow.sunrise).inMilliseconds;
+    final riseNow = panchangInstant(sunNow.sunrise);
+    final setNow = panchangInstant(sunNow.sunset);
+    if (!_now.isBefore(riseNow) && _now.isBefore(setNow)) {
+      final dayMs = setNow.difference(riseNow).inMilliseconds;
       final idx =
-          ((_now.difference(sunNow.sunrise).inMilliseconds / dayMs) * 4)
+          ((_now.difference(riseNow).inMilliseconds / dayMs) * 4)
               .floor()
               .clamp(0, 3)
               .toInt() +
@@ -37713,21 +40064,25 @@ class _Phase12PremiumFeatureScreenState
     } else {
       DateTime nightStart;
       DateTime nightEnd;
-      if (_now.isBefore(sunNow.sunrise)) {
+      if (_now.isBefore(riseNow)) {
         final prev = today.subtract(const Duration(days: 1));
-        nightStart = PanchangCalculator.sunTimes(
-          prev,
-          lat: AppLocation.lat,
-          lon: AppLocation.lon,
-        ).sunset;
-        nightEnd = sunNow.sunrise;
+        nightStart = panchangInstant(
+          PanchangCalculator.sunTimes(
+            prev,
+            lat: AppLocation.lat,
+            lon: AppLocation.lon,
+          ).sunset,
+        );
+        nightEnd = riseNow;
       } else {
-        nightStart = sunNow.sunset;
-        nightEnd = PanchangCalculator.sunTimes(
-          today.add(const Duration(days: 1)),
-          lat: AppLocation.lat,
-          lon: AppLocation.lon,
-        ).sunrise;
+        nightStart = setNow;
+        nightEnd = panchangInstant(
+          PanchangCalculator.sunTimes(
+            today.add(const Duration(days: 1)),
+            lat: AppLocation.lat,
+            lon: AppLocation.lon,
+          ).sunrise,
+        );
       }
       final nightMs = nightEnd.difference(nightStart).inMilliseconds;
       final idx =
@@ -37822,7 +40177,7 @@ class _Phase12PremiumFeatureScreenState
               FilledButton.icon(
                 onPressed: _saveCapsule,
                 icon: const Icon(Icons.save_rounded),
-                label: const Text('Time Capsule সেভ'),
+                label: const Text('সময়ের সিন্দুক সেভ'),
               ),
             ],
           ),
@@ -37949,7 +40304,7 @@ class _Phase12PremiumFeatureScreenState
     if (festivalDate == null) {
       return _glass(
         const Text(
-          'আগামী ১২০ দিনের saved festival data-তে কোনো বড় উৎসব পাওয়া যায়নি।',
+          'আগামী ১২০ দিনের সেভ করা উৎসব data-তে কোনো বড় উৎসব পাওয়া যায়নি।',
           style: TextStyle(color: Colors.white70),
         ),
       );
@@ -37991,10 +40346,10 @@ class _Phase12PremiumFeatureScreenState
         _prepStep('T-7', 'সামগ্রী/কেনাকাটার তালিকা তৈরি করুন', days <= 7),
         _prepStep(
           'T-3',
-          'পূজার স্থান, পোশাক ও পরিবারের plan মিলিয়ে নিন',
+          'পূজার স্থান, পোশাক ও পরিবারের প্ল্যান মিলিয়ে নিন',
           days <= 3,
         ),
-        _prepStep('T-1', 'শেষবার checklist ও সময় দেখে নিন', days <= 1),
+        _prepStep('T-1', 'শেষবার তালিকা ও সময় দেখে নিন', days <= 1),
         _prepStep(
           'DAY',
           'আজকের পঞ্জিকা timing ও নিজের পারিবারিক নিয়ম follow করুন',
@@ -38104,7 +40459,7 @@ class _Phase12PremiumFeatureScreenState
         if (_items.isEmpty)
           _glass(
             const Text(
-              'এখনও কোনো entry নেই।',
+              'এখনও কোনো তথ্য নেই।',
               style: TextStyle(color: Colors.white60),
             ),
           ),
@@ -38322,11 +40677,11 @@ class _Phase12PremiumFeatureScreenState
               _line('☀️', 'সূর্যোদয়: ${bnTime12(sun.sunrise)}'),
               _line(
                 '📷',
-                'সকালের window: ${bnTime12(sun.sunrise)} – ${bnTime12(morningEnd)}',
+                'সকালের সময়: ${bnTime12(sun.sunrise)} – ${bnTime12(morningEnd)}',
               ),
               _line(
                 '📷',
-                'সন্ধ্যার window: ${bnTime12(eveningStart)} – ${bnTime12(sun.sunset)}',
+                'সন্ধ্যার সময়: ${bnTime12(eveningStart)} – ${bnTime12(sun.sunset)}',
               ),
               _line('🌇', 'সূর্যাস্ত: ${bnTime12(sun.sunset)}'),
             ],
@@ -38335,7 +40690,7 @@ class _Phase12PremiumFeatureScreenState
         const SizedBox(height: 10),
         _glass(
           const Text(
-            'এটি astronomical “golden hour” solver নয়; সূর্যোদয়/অস্তের আশেপাশের ১ ঘণ্টার একটি সহজ planning window। Photography/শান্ত হাঁটা/আলো পরিকল্পনায় ব্যবহার করতে পারেন; বাস্তব আবহাওয়া ও নিরাপত্তাকে অগ্রাধিকার দিন।',
+            'এটি astronomical “golden hour” solver নয়; সূর্যোদয়/অস্তের আশেপাশের ১ ঘণ্টার একটি সহজ পরিকল্পনা সময়। Photography/শান্ত হাঁটা/আলো পরিকল্পনায় ব্যবহার করতে পারেন; বাস্তব আবহাওয়া ও নিরাপত্তাকে অগ্রাধিকার দিন।',
             style: TextStyle(
               color: Colors.white60,
               fontSize: 10.5,
@@ -38574,7 +40929,9 @@ class _Phase14DynamicHomeCardState extends State<_Phase14DynamicHomeCard> {
       lon: AppLocation.lon,
     );
     final nextFestival = BengaliCalendarData.upcomingFestivals(count: 1);
-    final isRahu = now.isAfter(rahu['start']!) && now.isBefore(rahu['end']!);
+    final isRahu =
+        now.isAfter(panchangInstant(rahu['start']!)) &&
+        now.isBefore(panchangInstant(rahu['end']!));
     String focus;
     if (now.hour < 10) {
       focus = 'আজ ${tithi.name} • সূর্যোদয় ${bnTime12(sun.sunrise)}';
@@ -38650,7 +41007,7 @@ class _Phase14DynamicHomeCardState extends State<_Phase14DynamicHomeCard> {
                     ),
                   ),
                   icon: const Icon(Icons.celebration_rounded, size: 16),
-                  label: const Text('Festival'),
+                  label: const Text('উৎসব'),
                 ),
               ),
             ],
@@ -38677,128 +41034,127 @@ class Phase14Feature {
 List<Phase14Feature> _phase14Features() => [
   Phase14Feature(
     '🏠',
-    'Dynamic Home 2.0',
+    'বদলে যাওয়া হোম',
     'সময় অনুযায়ী Home focus বদলায়',
     () => const HomeDashboardScreen(),
   ),
   Phase14Feature(
     '📅',
-    'Calendar Quick Action',
+    'ক্যালেন্ডারে দ্রুত যান',
     'Date → reminder/note/share/puja/rashi',
     () => const BengaliCalendarScreen(),
   ),
   Phase14Feature(
     '🌙',
-    'Advanced Moon Center',
+    'চাঁদের খবর',
     'phase • illumination • rise/set • countdown',
     () => const Phase14AdvancedMoonCenterScreen(),
   ),
   Phase14Feature(
     '🎊',
-    'Festival Smart Dashboard',
+    'উৎসবের পাতা',
     'আজ/নির্বাচিত দিনের পূজা timing & প্রস্তুতি',
     () => const Phase14FestivalSmartDashboardScreen(),
   ),
   Phase14Feature(
     '🪔',
-    'Puja Step-by-Step',
-    'সামগ্রী → ধাপ → checklist',
+    'ধাপে ধাপে পূজা',
+    'সামগ্রী → ধাপ → তালিকা',
     () => const Phase14PujaAssistantScreen(),
   ),
   Phase14Feature(
     '📖',
-    'ব্রত ও আচার Library',
+    'আচার-অনুষ্ঠানের বই',
     'offline cultural reference',
     () => const Phase14RitualLibraryScreen(),
   ),
   Phase14Feature(
     '👨‍👩‍👧',
-    'Family Dashboard 2.0',
-    'পরিবারের upcoming occasions',
+    'পরিবারের পাতা',
+    'পরিবারের আসন্ন অনুষ্ঠান',
     () => const Phase14FamilyDashboardScreen(),
   ),
   Phase14Feature(
     '🗓️',
-    'Bengali Year Timeline',
+    'বাংলা বছরের পথ',
     'বৈশাখ → চৈত্র yearly view',
     () => const Phase14BengaliYearTimelineScreen(),
   ),
   Phase14Feature(
     '🔔',
-    'Notification Rules',
-    'উৎসব/একাদশী/পূর্ণিমা rule-based alerts',
+    'খবর পাঠানোর নিয়ম',
+    'উৎসব, একাদশী ও পূর্ণিমার নিয়ম-ভিত্তিক সতর্কবার্তা',
     () => const Phase14NotificationRulesScreen(),
   ),
   Phase14Feature(
     '📱',
-    'Widget Pack Pro',
-    '৩টি launcher widget preference',
+    'উইজেট সংগ্রহ',
+    '৩টি হোম স্ক্রিন widget preference',
     () => const Phase14WidgetPackScreen(),
     premium: true,
   ),
   Phase14Feature(
     '🎨',
-    'Premium Theme Store',
+    'সাজ বদল',
     'Cosmic + Bengali festival themes',
     () => const Phase14ThemeStoreScreen(),
     premium: true,
   ),
   Phase14Feature(
     '🔎',
-    'Universal Search 2.0',
+    'সব কিছু খুঁজুন',
     'festival + feature + family + reminder',
     () => const Phase14UniversalSearchScreen(),
   ),
   Phase14Feature(
     '📤',
-    'Premium Share Studio',
+    'ছবি বানিয়ে শেয়ার',
     'Panchang/Moon/Festival text cards',
     () => const Phase14ShareStudioScreen(),
     premium: true,
   ),
   Phase14Feature(
     '🔐',
-    'Private Family Vault',
+    'পরিবারের সিন্দুক',
     'local PIN-protected private notes',
     () => const Phase14FamilyVaultScreen(),
     premium: true,
   ),
   Phase14Feature(
     '⚡',
-    'Performance Center',
+    'অ্যাপের গতি',
     'lightweight mode + optimization status',
     () => const Phase14PerformanceCenterScreen(),
   ),
   Phase14Feature(
     '🧭',
-    '5-Tab Navigation',
+    'নিচের ৫টি বোতাম',
     'Home • Calendar • Today • Services • Profile',
     () => const HomeDashboardScreen(),
   ),
   Phase14Feature(
     '🧓',
-    'Elder Mode',
+    'বড় লেখার মোড',
     'বড় লেখা + সহজ ব্যবহার',
     () => const Phase14ElderModeScreen(),
   ),
   Phase14Feature(
     '📴',
-    'Offline First',
+    'ইন্টারনেট ছাড়া',
     'year pack cache + offline readiness',
     () => const Phase14OfflineFirstScreen(),
   ),
   Phase14Feature(
     '✅',
-    'Accuracy Center',
+    'হিসাবের নির্ভুলতা',
     'location/timezone/calculation basis',
     () => const Phase14AccuracyCenterScreen(),
   ),
   Phase14Feature(
     '💎',
-    'Premium Dashboard 2.0',
+    'বিশেষ সংগ্রহ',
     'Daily • Family • Heritage • Tools',
     () => const PremiumScreen(),
-    premium: true,
   ),
 ];
 
@@ -38810,7 +41166,7 @@ class Phase14QualityCenterScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🌟 Daily & Quality 2.0'),
+          const _ScreenHeader(title: '🌟 রোজকার সঙ্গী'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 30),
@@ -38834,7 +41190,7 @@ class Phase14QualityCenterScreen extends StatelessWidget {
                     child: _P14GlassCard(
                       onTap: () {
                         final page = f.page();
-                        if (f.premium) {
+                        if (f.premium && !AppSettings.freeForEveryone) {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -38890,7 +41246,7 @@ class Phase14QualityCenterScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                          if (f.premium)
+                          if (f.premium && !AppSettings.freeForEveryone)
                             const Icon(
                               Icons.workspace_premium_rounded,
                               color: Color(0xFFFFD36E),
@@ -38984,7 +41340,7 @@ class _Phase14AdvancedMoonCenterScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🌙 Advanced Moon Center'),
+          const _ScreenHeader(title: '🌙 চাঁদের খবর'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -39158,7 +41514,7 @@ class _Phase14FestivalSmartDashboardScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🎊 Festival Smart Dashboard'),
+          const _ScreenHeader(title: '🎊 উৎসবের পাতা'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -39236,8 +41592,8 @@ class _Phase14FestivalSmartDashboardScreenState
                       ...[
                         '৭ দিন আগে — সামগ্রী/বাজেট তালিকা',
                         '৩ দিন আগে — প্রয়োজনীয় জিনিস নিশ্চিত',
-                        '১ দিন আগে — সময় ও reminder পরীক্ষা',
-                        'আজ — timing দেখে checklist অনুসরণ',
+                        '১ দিন আগে — সময় ও রিমাইন্ডার পরীক্ষা',
+                        'আজ — timing দেখে তালিকা অনুসরণ',
                       ].map(
                         (s) => Padding(
                           padding: const EdgeInsets.only(bottom: 6),
@@ -39308,7 +41664,7 @@ class _Phase14PujaAssistantScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🪔 Puja Step-by-Step'),
+          const _ScreenHeader(title: '🪔 ধাপে ধাপে পূজা'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -39372,7 +41728,7 @@ class _Phase14PujaAssistantScreenState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Progress: ${bnNum(_done.length)}/${bnNum(_steps.length)}',
+                  'অগ্রগতি: ${bnNum(_done.length)}/${bnNum(_steps.length)}',
                   style: TextStyle(
                     color: Phase14Prefs.accent,
                     fontWeight: FontWeight.w900,
@@ -39380,7 +41736,7 @@ class _Phase14PujaAssistantScreenState
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'নোট: পূজার নিয়ম পরিবার/সম্প্রদায়ভেদে আলাদা হতে পারে। এই checklist সাধারণ সাংস্কৃতিক সহায়ক।',
+                  'নোট: পূজার নিয়ম পরিবার/সম্প্রদায়ভেদে আলাদা হতে পারে। এই তালিকা সাধারণ সাংস্কৃতিক সহায়ক।',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 10.5,
@@ -39502,7 +41858,7 @@ class _Phase14FamilyDashboardScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '👨‍👩‍👧 Family Dashboard 2.0'),
+          const _ScreenHeader(title: '👨‍👩‍👧 পরিবারের পাতা'),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -39517,14 +41873,14 @@ class _Phase14FamilyDashboardScreenState
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '${bnNum(items.length)} জন/occasion saved',
+                                    '${bnNum(items.length)} জন/occasion সেভ করা',
                                     style: TextStyle(
                                       color: Phase14Prefs.accent,
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
                                   const Text(
-                                    'পরিবারের upcoming দিন এক নজরে',
+                                    'পরিবারের আসন্ন দিন এক নজরে',
                                     style: TextStyle(
                                       color: Colors.white60,
                                       fontSize: 11,
@@ -39535,7 +41891,7 @@ class _Phase14FamilyDashboardScreenState
                             ),
                             FilledButton(
                               onPressed: _manage,
-                              child: const Text('Manage'),
+                              child: const Text('পরিচালনা'),
                             ),
                           ],
                         ),
@@ -39544,7 +41900,7 @@ class _Phase14FamilyDashboardScreenState
                       if (items.isEmpty)
                         const _P14GlassCard(
                           child: Text(
-                            'এখনো family occasion যোগ করা হয়নি। Manage থেকে যোগ করুন।',
+                            'এখনো পরিবার occasion যোগ করা হয়নি। Manage থেকে যোগ করুন।',
                             style: TextStyle(color: Colors.white70),
                           ),
                         )
@@ -39638,7 +41994,7 @@ class Phase14BengaliYearTimelineScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🗓️ Bengali Year Timeline'),
+          const _ScreenHeader(title: '🗓️ বাংলা বছরের পথ'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -39769,7 +42125,7 @@ class _Phase14NotificationRulesScreenState
     setState(() => applying = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${bnNum(added)}টি upcoming alert প্রস্তুত হয়েছে'),
+        content: Text('${bnNum(added)}টি আসন্ন সতর্কবার্তা প্রস্তুত হয়েছে'),
       ),
     );
   }
@@ -39779,7 +42135,7 @@ class _Phase14NotificationRulesScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🔔 Intelligent Notification Rules'),
+          const _ScreenHeader(title: '🔔 খবর পাঠানোর নিয়ম'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -39791,7 +42147,7 @@ class _Phase14NotificationRulesScreenState
                         value: festival,
                         onChanged: (v) => setState(() => festival = v),
                         title: const Text(
-                          'উৎসব Alert',
+                          'উৎসব সতর্কবার্তা',
                           style: TextStyle(color: Colors.white),
                         ),
                       ),
@@ -39799,7 +42155,7 @@ class _Phase14NotificationRulesScreenState
                         value: ekadashi,
                         onChanged: (v) => setState(() => ekadashi = v),
                         title: const Text(
-                          'একাদশী Alert',
+                          'একাদশী সতর্কবার্তা',
                           style: TextStyle(color: Colors.white),
                         ),
                       ),
@@ -39807,7 +42163,7 @@ class _Phase14NotificationRulesScreenState
                         value: purnima,
                         onChanged: (v) => setState(() => purnima = v),
                         title: const Text(
-                          'পূর্ণিমা/অমাবস্যা Alert',
+                          'পূর্ণিমা/অমাবস্যা সতর্কবার্তা',
                           style: TextStyle(color: Colors.white),
                         ),
                       ),
@@ -39874,7 +42230,7 @@ class _Phase14WidgetPackScreenState extends State<Phase14WidgetPackScreen> {
       return '${bnNum(bd)} ${info.name} ${bnNum(info.year)}';
     if (mode == 'আজকের পঞ্জিকা') return '${t.paksha} পক্ষ • ${t.name}';
     return f.isEmpty
-        ? 'কোনো upcoming উৎসব নেই'
+        ? 'কোনো আসন্ন উৎসব নেই'
         : '${f.first['icon']} ${f.first['title']} • ${f.first['date']}';
   }
 
@@ -39883,7 +42239,7 @@ class _Phase14WidgetPackScreenState extends State<Phase14WidgetPackScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '📱 Widget Pack Pro'),
+          const _ScreenHeader(title: '📱 উইজেট সংগ্রহ'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -39917,7 +42273,7 @@ class _Phase14WidgetPackScreenState extends State<Phase14WidgetPackScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Preview',
+                        'ঝলক',
                         style: TextStyle(color: Colors.white60, fontSize: 10),
                       ),
                       const SizedBox(height: 6),
@@ -39940,17 +42296,15 @@ class _Phase14WidgetPackScreenState extends State<Phase14WidgetPackScreen> {
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text(
-                          'Widget preference সেভ ও refresh করা হয়েছে',
-                        ),
+                        content: Text('Widget preference সেভ ও নতুন করা হয়েছে'),
                       ),
                     );
                   },
-                  child: const Text('Apply & Refresh Widget'),
+                  child: const Text('উইজেট বসান ও নতুন করুন'),
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'নোট: launcher-এর native widget layout provider যেটুকু support করে, app সেই data-ই refresh করবে।',
+                  'নোট: হোম স্ক্রিন-এর উইজেট সাজ ব্যবস্থা যেটুকু সমর্থন করে, অ্যাপ সেই data-ই নতুন করবে।',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 10.3,
@@ -39990,7 +42344,7 @@ class _Phase14ThemeStoreScreenState extends State<Phase14ThemeStoreScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🎨 Premium Theme Store'),
+          const _ScreenHeader(title: '🎨 সাজ বদল'),
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.all(14),
@@ -40130,7 +42484,7 @@ class _Phase14UniversalSearchScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🔎 Universal Search 2.0'),
+          const _ScreenHeader(title: '🔎 সব কিছু খুঁজুন'),
           Padding(
             padding: const EdgeInsets.all(14),
             child: TextField(
@@ -40140,7 +42494,7 @@ class _Phase14UniversalSearchScreenState
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
-                hintText: 'অষ্টমী / festival / family / feature / reminder',
+                hintText: 'অষ্টমী / উৎসব / পরিবার / feature / রিমাইন্ডার',
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF07172F).withValues(alpha: 0.65),
@@ -40253,7 +42607,7 @@ class _Phase14ShareStudioScreenState extends State<Phase14ShareStudioScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '📤 Premium Share Studio'),
+          const _ScreenHeader(title: '📤 ছবি বানিয়ে শেয়ার'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -40291,7 +42645,7 @@ class _Phase14ShareStudioScreenState extends State<Phase14ShareStudioScreen> {
                 ),
                 const SizedBox(height: 12),
                 FilledButton.icon(
-                  onPressed: () => Share.share(txt),
+                  onPressed: () => shareFromApp(txt),
                   icon: const Icon(Icons.share_rounded),
                   label: const Text('Share'),
                 ),
@@ -40391,7 +42745,7 @@ class _Phase14FamilyVaultScreenState extends State<Phase14FamilyVaultScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🔐 Private Family Vault'),
+          const _ScreenHeader(title: '🔐 পরিবারের সিন্দুক'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -40445,7 +42799,7 @@ class _Phase14FamilyVaultScreenState extends State<Phase14FamilyVaultScreen> {
                         FilledButton.icon(
                           onPressed: _add,
                           icon: const Icon(Icons.lock_rounded),
-                          label: const Text('Save note'),
+                          label: const Text('নোট সেভ করুন'),
                         ),
                       ],
                     ),
@@ -40478,7 +42832,7 @@ class _Phase14FamilyVaultScreenState extends State<Phase14FamilyVaultScreen> {
                 ],
                 const SizedBox(height: 10),
                 const Text(
-                  'Privacy note: এই version local PIN gate ব্যবহার করে; cryptographic encryption/biometric vault নয়। অত্যন্ত সংবেদনশীল গোপন তথ্য এখানে না রাখাই ভালো।',
+                  'Privacy নোট: এই version অ্যাপে রাখা PIN gate ব্যবহার করে; cryptographic encryption/biometric vault নয়। অত্যন্ত সংবেদনশীল গোপন তথ্য এখানে না রাখাই ভালো।',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 10.2,
@@ -40508,7 +42862,7 @@ class _Phase14PerformanceCenterScreenState
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '⚡ Performance Center'),
+          const _ScreenHeader(title: '⚡ অ্যাপের গতি'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -40517,12 +42871,13 @@ class _Phase14PerformanceCenterScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _P14Title('Phase-14 cleanup applied'),
+                      _P14Title('অ্যাপ দ্রুত চালানোর উপায়'),
                       Text(
-                        '✓ ৪টি পুরোনো unused Home strip class source থেকে সরানো হয়েছে\n'
-                        '✓ Calendar-এ animation শুধু Today cell-এ থাকে\n'
-                        '✓ Home-এ নতুন feature-এর জন্য একটিমাত্র Dynamic card\n'
-                        '✓ নতুন tools-এ নতুন native dependency যোগ হয়নি',
+                        '✓ নিচের সুইচ দিয়ে অ্যানিমেশন বন্ধ করলে পুরনো ফোনেও\n'
+                        '   অ্যাপ ঝটপট চলবে, ব্যাটারিও কম খরচ হবে\n'
+                        '✓ ক্যালেন্ডারে শুধু আজকের ঘরটাই নড়াচড়া করে,\n'
+                        '   বাকি সব স্থির — তাই স্ক্রল মসৃণ থাকে\n'
+                        '✓ অ্যাপের সব হিসাব ফোনেই হয়, ইন্টারনেট ছাড়াই চলে',
                         style: TextStyle(
                           color: Colors.white70,
                           height: 1.7,
@@ -40545,11 +42900,11 @@ class _Phase14PerformanceCenterScreenState
                       setState(() {});
                     },
                     title: const Text(
-                      'Live Sky Animation',
+                      'চলন্ত আকাশের ছবি',
                       style: TextStyle(color: Colors.white),
                     ),
                     subtitle: const Text(
-                      'বন্ধ করলে animation load কমবে',
+                      'বন্ধ করলে animation আসতে কমবে',
                       style: TextStyle(color: Colors.white54, fontSize: 10.5),
                     ),
                   ),
@@ -40586,7 +42941,7 @@ class _Phase14ElderModeScreenState extends State<Phase14ElderModeScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '🧓 Elder Mode'),
+          const _ScreenHeader(title: '🧓 বড় লেখার মোড'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -40602,7 +42957,7 @@ class _Phase14ElderModeScreenState extends State<Phase14ElderModeScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
-                            'Elder Mode সেভ হয়েছে — Home-এ ফিরে UI refresh করুন',
+                            'বড় লেখার মোড সেভ হয়েছে — হোমে ফিরে UI নতুন করুন',
                           ),
                         ),
                       );
@@ -40616,7 +42971,7 @@ class _Phase14ElderModeScreenState extends State<Phase14ElderModeScreen> {
                       ),
                     ),
                     subtitle: const Text(
-                      'Text scaling বড় হবে; Calendar-এর মূল layout সীমার মধ্যে থাকবে।',
+                      'Text scaling বড় হবে; Calendar-এর মূল সাজ সীমার মধ্যে থাকবে।',
                       style: TextStyle(color: Colors.white60),
                     ),
                   ),
@@ -40674,7 +43029,7 @@ class _Phase14OfflineFirstScreenState extends State<Phase14OfflineFirstScreen> {
     if (mounted)
       setState(
         () => status =
-            '${bnNum(rows.length)}টি event entry local year-pack-এ cache হয়েছে',
+            '${bnNum(rows.length)}টি অনুষ্ঠান তথ্য অ্যাপে রাখা বছরের তথ্য-এ সংরক্ষণ হয়েছে',
       );
   }
 
@@ -40683,7 +43038,7 @@ class _Phase14OfflineFirstScreenState extends State<Phase14OfflineFirstScreen> {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '📴 Offline First Mode'),
+          const _ScreenHeader(title: '📴 ইন্টারনেট ছাড়া'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -40697,14 +43052,14 @@ class _Phase14OfflineFirstScreenState extends State<Phase14OfflineFirstScreen> {
                       await Phase14Prefs.setOffline(v);
                     },
                     title: const Text(
-                      'Offline-first preference',
+                      'ইন্টারনেট ছাড়া চালানোর পছন্দ',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     subtitle: const Text(
-                      'Calendar/tithi/festival calculation local data-কে অগ্রাধিকার',
+                      'Calendar/tithi/উৎসব calculation অ্যাপে রাখা data-কে অগ্রাধিকার',
                       style: TextStyle(color: Colors.white54),
                     ),
                   ),
@@ -40713,7 +43068,7 @@ class _Phase14OfflineFirstScreenState extends State<Phase14OfflineFirstScreen> {
                 FilledButton.icon(
                   onPressed: _cache,
                   icon: const Icon(Icons.download_for_offline_rounded),
-                  label: const Text('Current Year Pack Cache'),
+                  label: const Text('এই বছরের সংরক্ষিত তথ্য'),
                 ),
                 if (status.isNotEmpty) ...[
                   const SizedBox(height: 10),
@@ -40728,7 +43083,7 @@ class _Phase14OfflineFirstScreenState extends State<Phase14OfflineFirstScreen> {
                 const SizedBox(height: 12),
                 const _P14GlassCard(
                   child: Text(
-                    'Offline-ready: Calendar calculation • Tithi • Festival rules • Notes • Reminder • Family data। Weather/online payment/cloud sync-এর মতো service internet চাইতে পারে।',
+                    'Offline-ready: Calendar calculation • Tithi • উৎসব rules • Notes • রিমাইন্ডার • পরিবার data। Weather/online payment/cloud sync-এর মতো service internet চাইতে পারে।',
                     style: TextStyle(
                       color: Colors.white70,
                       height: 1.55,
@@ -40785,7 +43140,7 @@ class Phase14AccuracyCenterScreen extends StatelessWidget {
     return CosmicBackground(
       child: Column(
         children: [
-          const _ScreenHeader(title: '✅ Accuracy Center'),
+          const _ScreenHeader(title: '✅ হিসাবের নির্ভুলতা'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -40822,7 +43177,7 @@ class Phase14AccuracyCenterScreen extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
                   icon: const Icon(Icons.location_on_rounded),
-                  label: const Text('Location / Settings'),
+                  label: const Text('অবস্থান ও সেটিংস'),
                 ),
               ],
             ),
@@ -40858,7 +43213,7 @@ class Phase14PremiumDashboardCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Premium Dashboard 2.0',
+                  'বিশেষ সংগ্রহের পাতা',
                   style: TextStyle(
                     color: Phase14Prefs.accent,
                     fontWeight: FontWeight.w900,
@@ -40867,7 +43222,7 @@ class Phase14PremiumDashboardCard extends StatelessWidget {
                 ),
               ),
               Text(
-                unlocked ? 'ACTIVE' : 'LOCKED',
+                '',
                 style: TextStyle(
                   color: unlocked ? Colors.greenAccent : Colors.white38,
                   fontSize: 9,
@@ -40988,6 +43343,9 @@ class _HolidayEntry {
 
 class _HolidayScreenState extends State<HolidayScreen> {
   late int _year;
+
+  /// null হলে সারা বছরের সব মাস একসাথে, নাহলে শুধু ওই একটা মাস
+  int? _month;
   String _filter = 'সব';
   List<_HolidayEntry>? _cache;
   final _searchCtrl = TextEditingController();
@@ -41053,6 +43411,8 @@ class _HolidayScreenState extends State<HolidayScreen> {
   /// স্ক্রিন খোলার পর নিজে থেকেই চলতি মাসে নেমে আসে — ব্যবহারকারীকে
   /// জানুয়ারি থেকে হাতে স্ক্রল করে নামতে হয় না
   void _jumpToThisMonth() {
+    // এক-মাস দেখার সময় নিজে থেকে লাফালে বিভ্রান্তি হয়
+    if (_month != null) return;
     if (_jumped || _year != DateTime.now().year) return;
     _jumped = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -41180,7 +43540,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
       );
     }
     b.writeln('\n— বাংলা পঞ্জিকা');
-    Share.share(b.toString(), subject: '${_year} সালের ছুটির তালিকা');
+    shareFromApp(b.toString(), subject: '${_year} সালের ছুটির তালিকা');
   }
 
   // ------------------------------------------------------------------
@@ -41206,6 +43566,10 @@ class _HolidayScreenState extends State<HolidayScreen> {
       byMonth.putIfAbsent(h.date.month, () => []).add(h);
     }
     final months = byMonth.keys.toList()..sort();
+    // এক-মাস দেখার সময় শুধু ওই মাসটাই দেখাব
+    final shown = _month == null
+        ? months
+        : months.where((m) => m == _month).toList();
 
     return CosmicBackground(
       child: SafeArea(
@@ -41225,6 +43589,12 @@ class _HolidayScreenState extends State<HolidayScreen> {
                   _filterBar(),
                   const SizedBox(height: 10),
                   _helpStrip(),
+                  const SizedBox(height: 10),
+                  _monthStrip(byMonth),
+                  if (_month != null) ...[
+                    const SizedBox(height: 10),
+                    _monthNav(byMonth),
+                  ],
                   const SizedBox(height: 4),
                   if (list.isEmpty)
                     const Padding(
@@ -41236,8 +43606,18 @@ class _HolidayScreenState extends State<HolidayScreen> {
                         ),
                       ),
                     )
+                  else if (_month != null && shown.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 40),
+                      child: Center(
+                        child: Text(
+                          '${gregMonthBn(_month!)} মাসে এই ধরনের কোনো ছুটি নেই',
+                          style: const TextStyle(color: Colors.white54),
+                        ),
+                      ),
+                    )
                   else
-                    ...months.map((m) => _monthBlock(m, byMonth[m]!)),
+                    ...shown.map((m) => _monthBlock(m, byMonth[m]!)),
                 ],
               ),
             ),
@@ -41518,6 +43898,178 @@ class _HolidayScreenState extends State<HolidayScreen> {
   }
 
   // ---- মাসের ব্লক ----
+  // ---- ১২ মাসের সারি — কোন মাসে কটা ছুটি, এক নজরে ----
+  // চাপ দিলে শুধু ওই মাসটাই দেখায়, আবার চাপলে সারা বছর ফিরে আসে।
+  Widget _monthStrip(Map<int, List<_HolidayEntry>> byMonth) {
+    final now = DateTime.now();
+    // উচ্চতা স্থির ৬২ ছিল, আর ভেতরের দুটো লেখা ফোনের ফন্ট-সাইজ অনুযায়ী
+    // বড় হয়ে ওই সীমা ছাড়িয়ে যেত — তখন "BOTTOM OVERFLOWED" দেখাত।
+    // এখন উচ্চতা একটু বেশি, আর দুটো লেখাই Flexible + FittedBox-এর ভেতরে,
+    // তাই জায়গা কম পড়লে নিজে থেকে একটু ছোট হয়ে বসে যায়।
+    return SizedBox(
+      height: 70,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: 12,
+        separatorBuilder: (_, __) => const SizedBox(width: 7),
+        itemBuilder: (context, i) {
+          final m = i + 1;
+          final count = byMonth[m]?.length ?? 0;
+          final selected = _month == m;
+          final isNow = m == now.month && _year == now.year;
+          final tone = selected
+              ? const Color(0xFFFFD36E)
+              : isNow
+              ? const Color(0xFF9DD6FF)
+              : Colors.white;
+          return GestureDetector(
+            onTap: () => setState(() => _month = selected ? null : m),
+            child: Container(
+              width: 62,
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color(0xFFFFD36E).withValues(alpha: 0.20)
+                    : const Color(0xFF07182E).withValues(alpha: 0.62),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFFFFD36E)
+                      : isNow
+                      ? const Color(0xFF9DD6FF).withValues(alpha: 0.55)
+                      : Colors.white.withValues(alpha: 0.14),
+                  width: selected ? 1.5 : 0.9,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        gregMonthBn(m),
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: tone.withValues(alpha: 0.92),
+                          fontSize: 12,
+                          height: 1.0,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        count == 0 ? '—' : bnNum(count),
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: count == 0
+                              ? Colors.white30
+                              : tone.withValues(alpha: 0.95),
+                          fontSize: 16,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ---- এক মাস দেখার সময়ের উপরের বার: ◀ মাসের নাম ▶ ----
+  Widget _monthNav(Map<int, List<_HolidayEntry>> byMonth) {
+    final m = _month!;
+    final count = byMonth[m]?.length ?? 0;
+    // মাস বদলালে দরকারে বছরও পিছিয়ে/এগিয়ে যায়
+    void step(int delta) {
+      var nm = m + delta;
+      var ny = _year;
+      if (nm < 1) {
+        nm = 12;
+        ny -= 1;
+      } else if (nm > 12) {
+        nm = 1;
+        ny += 1;
+      }
+      setState(() {
+        _month = nm;
+        if (ny != _year) {
+          _year = ny;
+          _cache = null;
+        }
+      });
+    }
+
+    Widget arrow(IconData icon, VoidCallback onTap, String tip) {
+      return IconButton(
+        icon: Icon(icon, color: const Color(0xFFFFD36E), size: 26),
+        tooltip: tip,
+        onPressed: onTap,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF07182E).withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        children: [
+          arrow(Icons.chevron_left_rounded, () => step(-1), 'আগের মাস'),
+          Expanded(
+            child: Column(
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '${gregMonthBn(m)} ${bnNum(_year)}',
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Color(0xFFFFD36E),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Text(
+                  count == 0
+                      ? 'এই মাসে কোনো ছুটি নেই'
+                      : 'এই মাসে ${bnNum(count)}টি ছুটি ও উৎসব',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          arrow(Icons.chevron_right_rounded, () => step(1), 'পরের মাস'),
+          TextButton(
+            onPressed: () => setState(() => _month = null),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF9DD6FF),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 0),
+            ),
+            child: const Text(
+              'সারা বছর',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _monthBlock(int m, List<_HolidayEntry> items) {
     final isThisMonth =
         m == DateTime.now().month && _year == DateTime.now().year;
@@ -41875,7 +44427,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                   Expanded(
                     child: _sheetButton(Icons.share_rounded, 'শেয়ার', () {
                       Navigator.pop(sheetContext);
-                      Share.share(
+                      shareFromApp(
                         '${h.icon} ${h.label}\n'
                         '${bnNum(h.date.day)} ${gregMonthBn(h.date.month)} ${bnNum(h.date.year)}'
                         ' • ${PanchangCalculator.weekdayName(h.date)}\n'
@@ -41985,4 +44537,3 @@ class _HolidayScreenState extends State<HolidayScreen> {
     );
   }
 }
-

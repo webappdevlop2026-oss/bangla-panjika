@@ -1,5 +1,5 @@
 name: bangla_panjika_native
-description: "A new Flutter project."
+description: "বাংলা পঞ্জিকা — তিথি, নক্ষত্র, উৎসব, ছুটির দিন ও শুভ মুহূর্ত এক অ্যাপে।"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 2.0.1+201
 
 environment:
   sdk: ^3.12.2
@@ -66,6 +66,12 @@ dependencies:
 
   # WhatsApp/ফোন কল খোলার জন্য (জ্যোতিষী বুকিং, ইত্যাদি)
   url_launcher: ^6.3.1
+
+  # Play Store-এর নিজের রেটিং শিট অ্যাপের ভেতরেই দেখানোর জন্য।
+  # রেটিং ও রিভিউয়ের সংখ্যা Play-এর সার্চ র‍্যাঙ্কিংয়ের সবচেয়ে বড়
+  # উপাদানগুলোর একটা — তাই ব্যবহারকারীকে অ্যাপ থেকে বের না করেই
+  # (Play Store না খুলে) রেটিং দেওয়ার সুযোগ দেওয়া হয়।
+  in_app_review: ^2.0.9
 
   # বিজ্ঞাপন (Google-এর অফিসিয়াল টেস্ট ID দিয়ে সেট করা — নিজের AdMob
   # একাউন্ট হলে বদলে দিতে হবে, README-তে বিস্তারিত আছে)। নতুন Gradle

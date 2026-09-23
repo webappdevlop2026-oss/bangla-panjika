@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>গোপনীয়তা নীতি — বাংলা পঞ্জিকা (ShriPanchang)</title>
+<style>
+  :root{
+    --bg:#fbf9f4; --card:#ffffff; --ink:#1d1a15; --muted:#5d564a;
+    --line:#e6e0d3; --accent:#9a3412;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14120e; --card:#1c1915; --ink:#f2ece1; --muted:#a79e8e;
+           --line:#2e2a23; --accent:#f0a06a; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Noto Sans Bengali","Hind Siliguri",system-ui,-apple-system,"Segoe UI",sans-serif;
+    line-height:1.75;}
+  .wrap{max-width:760px;margin:0 auto;padding:16px;padding-block:48px}
+  header{border-bottom:2px solid var(--accent);padding-bottom:20px;margin-bottom:32px}
+  h1{font-size:1.75rem;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:.95rem;margin:0}
+  h2{font-size:1.15rem;margin:36px 0 10px;color:var(--accent)}
+  p,li{color:var(--ink);font-size:1rem}
+  ul{padding-left:22px}
+  li{margin-bottom:8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;margin:20px 0}
+  .tbl{width:100%;border-collapse:collapse;margin:14px 0;font-size:.95rem}
+  .tbl th,.tbl td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+  .tbl th{background:var(--bg);font-weight:600}
+  .scroll{overflow-x:auto}
+  .big{font-weight:600;font-size:1.05rem}
+  footer{margin-top:44px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:.9rem}
+  code{background:var(--bg);border:1px solid var(--line);padding:1px 6px;border-radius:5px;font-size:.9em}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>গোপনীয়তা নীতি</h1>
+  <p class="sub">বাংলা পঞ্জিকা — ShriPanchang • প্যাকেজ <code>com.shripanchang.calendar</code><br>
+  সর্বশেষ সংশোধন: ১৬ সেপ্টেম্বর ২০২৬</p>
+</header>
+
+<div class="card">
+  <p class="big">সংক্ষেপে: এই অ্যাপ আপনার কোনো ব্যক্তিগত তথ্য সার্ভারে পাঠায় না।</p>
+  <p style="margin-bottom:0">আপনি যা কিছু লেখেন — নাম, জন্ম তারিখ, ঠিকানা, রিমাইন্ডার, নোট — সবই
+  শুধু আপনার নিজের ফোনেই থাকে। আমরা সেগুলো দেখতে পাই না, সংগ্রহ করি না, কারও কাছে বিক্রি করি না।</p>
+</div>
+
+<h2>১. আমরা কী কী তথ্য নিই</h2>
+<div class="scroll">
+<table class="tbl">
+  <tr><th>তথ্য</th><th>কেন লাগে</th><th>কোথায় থাকে</th></tr>
+  <tr>
+    <td>নাম, জন্ম তারিখ ও সময়, ঠিকানা</td>
+    <td>কুষ্ঠি, রাশিফল ও ব্যক্তিগত পঞ্চাঙ্গ হিসেব করতে</td>
+    <td>শুধু আপনার ফোনে</td>
+  </tr>
+  <tr>
+    <td>অবস্থান (লোকেশন)</td>
+    <td>আপনার জেলার সঠিক সূর্যোদয়, সূর্যাস্ত, তিথি ও আবহাওয়া দেখাতে</td>
+    <td>ফোনে; আবহাওয়ার জন্য শুধু অক্ষাংশ-দ্রাঘিমাংশ Open-Meteo-তে যায়</td>
+  </tr>
+  <tr>
+    <td>মাইক্রোফোন</td>
+    <td>শুধু "ভয়েস রিমাইন্ডার" ফিচারে — বলা কথা লেখায় বদলাতে</td>
+    <td>ফোনের নিজস্ব ভয়েস সিস্টেম; আমরা কোনো রেকর্ডিং রাখি না</td>
+  </tr>
+  <tr>
+    <td>রিমাইন্ডার ও নোট</td>
+    <td>আপনার সেট করা সময়ে নোটিফিকেশন দিতে</td>
+    <td>শুধু আপনার ফোনে</td>
+  </tr>
+</table>
+</div>
+
+<h2>২. অ্যাকাউন্ট লাগে না</h2>
+<p>অ্যাপ চালাতে কোনো রেজিস্ট্রেশন, লগইন, OTP বা ফোন নম্বর লাগে না। অ্যাপ খুললেই
+সরাসরি ব্যবহার শুরু করতে পারেন।</p>
+
+<h2>৩. বাইরের যে সেবাগুলো ব্যবহার হয়</h2>
+<ul>
+  <li><strong>Open-Meteo</strong> — আবহাওয়া দেখাতে। শুধু আপনার এলাকার অক্ষাংশ-দ্রাঘিমাংশ পাঠানো হয়,
+      নাম বা পরিচয় নয়। <a href="https://open-meteo.com/en/terms">শর্তাবলি</a></li>
+  <li><strong>উইকিপিডিয়া</strong> — মনীষীদের সংক্ষিপ্ত পরিচয় আনতে। শুধু ব্যক্তির নাম খোঁজা হয়।</li>
+</ul>
+
+<div class="card">
+  <p style="margin:0"><strong>এই সংস্করণে বিজ্ঞাপন নেই, অ্যাপের ভেতরে কোনো কেনাকাটাও নেই।</strong>
+  ভবিষ্যতে বিজ্ঞাপন (Google AdMob) চালু করা হলে এই পাতাটি আগে থেকেই হালনাগাদ করা হবে —
+  তখন Google তাদের নিজস্ব নীতি অনুযায়ী ডিভাইসের বিজ্ঞাপন-আইডি ব্যবহার করতে পারে
+  (<a href="https://policies.google.com/technologies/partner-sites">Google-এর নীতি</a>)।</p>
+</div>
+
+<h2>৪. শিশুদের বিষয়ে</h2>
+<p>এই অ্যাপ সব বয়সের জন্য। ১৩ বছরের কম বয়সী শিশুদের কাছ থেকে আমরা জেনেশুনে
+কোনো ব্যক্তিগত তথ্য সংগ্রহ করি না।</p>
+
+<h2>৫. আপনার তথ্য মুছে ফেলা</h2>
+<p>যেহেতু সব তথ্য আপনার ফোনেই থাকে, অ্যাপটি আনইনস্টল করলেই সব মুছে যায়।
+চাইলে ফোনের <code>Settings → Apps → বাংলা পঞ্জিকা → Storage → Clear data</code>
+থেকেও যেকোনো সময় সব মুছে ফেলতে পারেন।</p>
+
+<h2>৬. নিরাপত্তা</h2>
+<p>অ্যাপ কোনো পাসওয়ার্ড, কার্ড নম্বর বা গোপন চাবি নিজের ভেতরে রাখে না। ইন্টারনেটে
+যতটুকু যোগাযোগ হয় তার সবই এনক্রিপ্টেড (HTTPS)।</p>
+
+<h2>৭. জ্যোতিষ-সংক্রান্ত তথ্য নিয়ে</h2>
+<p>রাশিফল, কুষ্ঠি, শুভ মুহূর্ত ও মিলন-সংক্রান্ত সব ফল ঐতিহ্যবাহী পঞ্জিকা-শাস্ত্রের
+নিয়মে হিসেব করা। এগুলো বিশ্বাস ও সংস্কৃতিভিত্তিক তথ্য — চিকিৎসা, আইন বা আর্থিক
+পরামর্শ নয়। বড় কোনো সিদ্ধান্তে উপযুক্ত বিশেষজ্ঞের পরামর্শ নেবেন।</p>
+
+<h2>৮. নীতি বদলালে</h2>
+<p>এই নীতিতে কোনো পরিবর্তন হলে উপরের তারিখটি বদলে যাবে এবং নতুন সংস্করণ এই
+পাতাতেই প্রকাশিত হবে।</p>
+
+<h2>৯. যোগাযোগ</h2>
+<p>গোপনীয়তা নিয়ে কোনো প্রশ্ন থাকলে জানান:
+<strong><a href="mailto:shripanchang26@gmail.com">shripanchang26@gmail.com</a></strong></p>
+
+<footer>
+  বাংলা পঞ্জিকা — ShriPanchang • তিথি, নক্ষত্র, উৎসব, ছুটির দিন ও শুভ মুহূর্ত এক অ্যাপে।<br>
+  <a href="https://shripanchang.in/">shripanchang.in</a>
+</footer>
+
+</div>
+</body>
+</html>
