@@ -46,8 +46,12 @@ Future<void> main() async {
   // বাকিটা প্রথম ফ্রেম আঁকা হয়ে যাওয়ার পর — ব্যবহারকারী তখন অ্যাপ
   // দেখতে পাচ্ছেন, এগুলো পেছনে চুপচাপ হয়ে যায়।
   WidgetsBinding.instance.addPostFrameCallback((_) async {
+    unawaited(AdminRemoteConfig.instance.load());
     try {
       await NotificationService.instance.init();
+      if (AppSettings.instance.notifications) {
+        await NotificationService.instance.scheduleAutomaticPanjikaAlerts();
+      }
       await AppSettings.instance.refreshEveningLampSchedule();
       await HomeWidgetService.updateWidget();
       await AppRating.instance.registerOpen();
@@ -839,6 +843,109 @@ class NotificationService {
     );
   }
 
+  // ================================================================
+  // AUTO PANJIKA NOTIFICATIONS
+  // Puja / Festival / Ekadashi / Purnima / Amavasya
+  // আগের দিন সন্ধ্যা ৭টায় automatic alert
+  // ================================================================
+
+  static const int _autoPanjikaBaseId = 920000;
+  static const int _autoPanjikaMaxNotifications = 50;
+  static const int _autoPanjikaLookAheadDays = 60;
+
+  Future<void> cancelAutomaticPanjikaAlerts() async {
+    await init();
+    if (kIsWeb) return;
+
+    for (int i = 0; i < _autoPanjikaMaxNotifications; i++) {
+      await _plugin.cancel(_autoPanjikaBaseId + i);
+    }
+  }
+
+  Future<void> scheduleAutomaticPanjikaAlerts() async {
+    await init();
+    if (kIsWeb) return;
+
+    await cancelAutomaticPanjikaAlerts();
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    int notificationIndex = 0;
+    final seen = <String>{};
+
+    for (
+      int dayOffset = 0;
+      dayOffset <= _autoPanjikaLookAheadDays &&
+          notificationIndex < _autoPanjikaMaxNotifications;
+      dayOffset++
+    ) {
+      final eventDay = today.add(Duration(days: dayOffset));
+
+      final events = BengaliCalendarData.eventsFor(eventDay);
+
+      for (final event in events) {
+        if (notificationIndex >= _autoPanjikaMaxNotifications) break;
+
+        final important =
+            event.category == 'general' ||
+            event.category == 'ekadashi' ||
+            event.category == 'purnima' ||
+            event.category == 'amabasya';
+
+        if (!important) continue;
+
+        final uniqueKey =
+            '${eventDay.year}-${eventDay.month}-${eventDay.day}-${event.label}';
+
+        if (!seen.add(uniqueKey)) continue;
+
+        // Default: event-এর আগের দিন সন্ধ্যা ৭টা
+        var alertTime = DateTime(
+          eventDay.year,
+          eventDay.month,
+          eventDay.day,
+          19,
+        ).subtract(const Duration(days: 1));
+
+        String title;
+        String body;
+
+        if (dayOffset == 0) {
+          // আজকের event হলে এবং আগের দিনের সময় চলে গেলে,
+          // আজ এখনও সময় থাকলে কাছের সময়ে একটি alert দেওয়া হবে।
+          alertTime = now.add(const Duration(minutes: 2));
+
+          title = '${event.icon} আজ ${event.label}';
+          body =
+              'আজ ${event.label}। বিস্তারিত তিথি ও সময় দেখতে ShriPanchang খুলুন।';
+        } else {
+          title = '${event.icon} আগামীকাল ${event.label}';
+          body =
+              'আগামীকাল ${event.label}। বিস্তারিত তিথি ও সময় দেখতে ShriPanchang খুলুন।';
+        }
+
+        if (!alertTime.isAfter(now)) continue;
+
+        await _plugin.zonedSchedule(
+          _autoPanjikaBaseId + notificationIndex,
+          title,
+          body,
+          tz.TZDateTime.from(alertTime, tz.local),
+          const NotificationDetails(
+            android: _androidDetails,
+            iOS: DarwinNotificationDetails(),
+          ),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+        );
+
+        notificationIndex++;
+      }
+    }
+  }
+
   Future<void> cancelEveningLampReminders() async {
     await init();
     if (kIsWeb) return;
@@ -1044,6 +1151,146 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
 // আসল হোস্টিং হয়ে গেলে নিচের 'hosted' URL-টা বদলে দিলেই পুরো অ্যাপ সেটার
 // সাথে যুক্ত হয়ে যাবে, আর কোথাও কিছু বদলাতে হবে না।
 // =====================================================================
+
+class AdminRemoteConfig extends ChangeNotifier {
+  AdminRemoteConfig._();
+  static final AdminRemoteConfig instance = AdminRemoteConfig._();
+
+  static const String bootstrapUrl =
+      'https://shripanchang.in/api/bootstrap?target=app';
+
+  static const String _cacheKey = 'admin_bootstrap_cache_v2';
+
+  final Map<String, Map<String, dynamic>> _features = {};
+  Map<String, dynamic> _settings = {};
+  List<dynamic> banners = const [];
+  List<dynamic> notices = const [];
+
+  bool loaded = false;
+  bool online = false;
+  DateTime? lastSync;
+  String? lastError;
+
+  bool _asBool(dynamic value, [bool fallback = false]) {
+    if (value == null) return fallback;
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final s = value.toString().toLowerCase().trim();
+    return s == '1' || s == 'true' || s == 'yes' || s == 'on';
+  }
+
+  bool get maintenanceMode => _asBool(_settings['maintenance_mode']);
+
+  String setting(String key, [String fallback = '']) =>
+      _settings[key]?.toString() ?? fallback;
+
+  bool featureEnabled(String key) {
+    final f = _features[key];
+    if (f == null) return true;
+    return _asBool(f['enabled'] ?? f['is_enabled'], true);
+  }
+
+  bool featurePremium(String key) {
+    final f = _features[key];
+    if (f == null) return false;
+
+    dynamic value = f['is_premium'];
+    final config = f['config'];
+
+    if (value == null && config is Map) {
+      value = config['is_premium'];
+    }
+
+    return _asBool(value, false);
+  }
+
+  String get maintenanceMessage {
+    final value = setting('maintenance_message').trim();
+    return value.isEmpty
+        ? 'অ্যাপটি সাময়িকভাবে রক্ষণাবেক্ষণের জন্য বন্ধ আছে। কিছুক্ষণ পরে আবার চেষ্টা করুন।'
+        : value;
+  }
+
+  int featureOrder(String key, [int fallback = 9999]) {
+    final value = _features[key]?['sort_order'];
+    return value is int
+        ? value
+        : int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final cached = prefs.getString(_cacheKey);
+    if (cached != null && cached.isNotEmpty) {
+      try {
+        final data = jsonDecode(cached);
+        if (data is Map<String, dynamic>) {
+          _apply(data);
+        }
+      } catch (_) {}
+    }
+
+    await refresh();
+  }
+
+  Future<void> refresh() async {
+    try {
+      final res = await http
+          .get(Uri.parse(bootstrapUrl))
+          .timeout(const Duration(seconds: 6));
+
+      if (res.statusCode != 200) {
+        throw Exception('Admin API HTTP ${res.statusCode}');
+      }
+
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('Admin API response invalid');
+      }
+
+      _apply(decoded);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cacheKey, jsonEncode(decoded));
+
+      online = true;
+      loaded = true;
+      lastSync = DateTime.now();
+      lastError = null;
+      notifyListeners();
+    } catch (e) {
+      online = false;
+      loaded = true;
+      lastError = e.toString();
+      notifyListeners();
+    }
+  }
+
+  void _apply(Map<String, dynamic> data) {
+    _settings = Map<String, dynamic>.from(
+      (data['settings'] as Map?) ?? const {},
+    );
+
+    _features.clear();
+    for (final item in (data['features'] as List?) ?? const []) {
+      if (item is Map) {
+        final m = Map<String, dynamic>.from(item);
+        final key = m['feature_key']?.toString();
+        if (key != null && key.isNotEmpty) {
+          _features[key] = m;
+        }
+      }
+    }
+
+    banners = List<dynamic>.from((data['banners'] as List?) ?? const []);
+
+    notices = List<dynamic>.from((data['notices'] as List?) ?? const []);
+
+    loaded = true;
+  }
+}
 
 class BackendConfig {
   // ⚠️ হোস্টিং রেডি হলে এটা বদলে দিন, যেমন: 'https://api.banglapanjika.com'
@@ -1318,6 +1565,494 @@ class PaymentService {
   }
 }
 
+class AdminFeatureRegistry {
+  static const Map<String, String> _titleToKey = {
+    '100-Year Date Explorer': 'hundred_year_explorer',
+    '108 Japa Counter': 'japa_counter',
+    '24H Timeline': 'next_24h_panchang',
+    'Accuracy Center': 'accuracy_center',
+    'Advanced Moon Center': 'advanced_moon_center',
+    'Alpana Generator': 'alpana_generator',
+    'App Version / Update Control': 'app_update_control',
+    'Baby Naming': 'baby_naming',
+    'Backup': 'cloud_backup',
+    'Banner / Notice': 'banner_notice',
+    'Bedroom & Study': 'vastu_bedroom_study',
+    'Bengali Birthday Mode': 'bengali_birthday',
+    'Bengali Heritage Map': 'heritage_map',
+    'Bengali Life Planner': 'life_planner',
+    'Bengali Ritual Library': 'ritual_library',
+    'Bengali Year Journey': 'bengali_year_journey',
+    'Bengali Year Timeline': 'bengali_year_journey',
+    'Best Day Finder': 'best_day_finder',
+    'Best Day for My Rashi': 'rashi_best_day',
+    'Birth Rashi Setup': 'birth_rashi_setup',
+    'Calendar Quick Action': 'calendar_quick_action',
+    'Cloud Backup': 'cloud_backup',
+    'Daily & Quality 2.0': 'quality20',
+    'Daily & Quality Center': 'quality20',
+    'Daily Bengali Share Card': 'daily_share_card',
+    'Daily Routine': 'daily_routine',
+    'Daily Share Card': 'daily_share_card',
+    'Date Converter': 'date_converter',
+    'Day Compare': 'panchang_compare',
+    'Direction Intelligence': 'direction_intelligence',
+    'Dynamic Home 2.0': 'dynamic_home',
+    'Eclipse Center': 'eclipse_center',
+    'Elder Mode': 'elder_mode',
+    'Family Assistant': 'family_occasion_assistant',
+    'Family Board': 'family_upcoming_board',
+    'Family Calendar': 'family_calendar',
+    'Family Dashboard 2.0': 'family_dashboard',
+    'Family Festival Duty Board': 'family_festival_duty',
+    'Family Occasion Assistant': 'family_occasion_assistant',
+    'Family Panchang Profiles': 'family_profiles',
+    'Family QR Sync': 'family_qr_sync',
+    'Family Tradition Book': 'family_tradition_book',
+    'Family Upcoming Board': 'family_upcoming_board',
+    'Family Vault': 'family_vault',
+    'Favourite Day': 'favourite_day',
+    'Feedback / Support': 'feedback_support',
+    'Festival Budget Planner': 'festival_budget',
+    'Festival Countdown': 'festival_countdown',
+    'Festival Live': 'festival_live_mode',
+    'Festival Live Mode': 'festival_live_mode',
+    'Festival Live Theme': 'festival_theme_engine',
+    'Festival Memory Timeline': 'festival_memory_timeline',
+    'Festival Poster': 'festival_poster',
+    'Festival Poster Studio': 'festival_poster',
+    'Festival Preparation Timeline': 'festival_preparation_timeline',
+    'Festival Route Timeline': 'festival_route_timeline',
+    'Festival Smart Dashboard': 'festival_smart_dashboard',
+    'Festival Sound Mode': 'festival_sound_mode',
+    'Festival Super Hub': 'festival_hub',
+    'Historical Timeline': 'historical_timeline',
+    'History Date Explorer': 'history_date_explorer',
+    'Home Checklist': 'vastu_checklist',
+    'Home Vastu Checklist': 'vastu_checklist',
+    'Home Vastu Visual Planner': 'home_vastu_visual',
+    'Home Widget': 'home_widget',
+    'Intelligent Notification Rules': 'notification_rules',
+    'Kitchen & Puja': 'vastu_kitchen_puja',
+    'Kundli': 'kundli',
+    'Kundli Milan': 'kundli_milan',
+    'Latest 30': 'latest30',
+    'Latest 30 Update': 'latest30',
+    'Life Planner': 'life_planner',
+    'Live Muhurta': 'live_muhurta_radar',
+    'Live Muhurta Radar': 'live_muhurta_radar',
+    'Live Sky Panchang': 'live_sky_panchang',
+    'Lucky Window Countdown': 'lucky_window',
+    'Mahapurush Anniversary Reminder': 'anniversary_reminder',
+    'Mahapurush Library': 'mahapurush_library',
+    'Main Door & Plot': 'vastu_plot_facing',
+    'Main Door & Plot Facing': 'vastu_plot_facing',
+    'Maintenance Mode': 'maintenance_mode',
+    'Meditation & Breath Timer': 'meditation_timer',
+    'Month Summary': 'month_summary',
+    'Moon Mood Calendar': 'moon_mood_calendar',
+    'Moon Sign + Sun Sign': 'moon_sign_sun_sign',
+    'Morning Brief': 'app_notifications',
+    'Multi-device Backup / Sync': 'multi_device_sync',
+    'My Year Map': 'my_year_map',
+    'Nearby Temple / Spiritual Places': 'nearby_temple',
+    'Night Panchang Mode': 'night_panchang_mode',
+    'Notes': 'notes',
+    'Notification Rules': 'notification_rules',
+    'Offline Festival Pack': 'offline_festival_pack',
+    'Offline First': 'offline_first',
+    'Offline First Mode': 'offline_first',
+    'Offline Year Pack': 'offline_year_pack',
+    'One-Tap আজ Screen': 'one_tap_today',
+    'PDF Export': 'pdf_export',
+    'Panchang Calculator Hub': 'panchang_calculator_hub',
+    'Panchang Time Capsule': 'time_capsule',
+    'Panjika Diary': 'panjika_diary',
+    'Panjika Voice': 'smart_search',
+    'Personal Spiritual Analytics': 'spiritual_analytics',
+    'Personal Year Dashboard': 'personal_year_dashboard',
+    'Phase 14 Quality': 'quality20',
+    'Planet Explorer': 'planet_explorer',
+    'Premium Center': 'premium_center',
+    'Premium Command Center': 'premium_command_center',
+    'Premium Dashboard 2.0': 'premium_dashboard',
+    'Premium Heritage Lab': 'premium_heritage',
+    'Premium Private Vault': 'private_vault',
+    'Premium Share Studio': 'share_studio',
+    'Premium Theme Store': 'premium_theme_store',
+    'Private Family Vault': 'family_vault',
+    'Profile': 'profile',
+    'Puja Assistant Mode': 'puja_assistant',
+    'Puja Checklist': 'puja_checklist',
+    'Puja Planner': 'puja_planner',
+    'Puja Samagri Generator': 'puja_samagri_generator',
+    'Puja Step Mode': 'puja_step_mode',
+    'Puja Step-by-Step Mode': 'puja_step_mode',
+    'Push Notification System': 'app_notifications',
+    'Rashi Calendar': 'rashi_calendar',
+    'Reminder Center': 'reminder_center',
+    'Room Planner Check': 'vastu_room_planner',
+    'SUPER 30': 'super30',
+    'Sadhana Streak': 'sadhana_streak',
+    'Season & Agriculture Calendar': 'agriculture_calendar',
+    'Settings / Personalization': 'app_settings',
+    'Share Studio': 'share_studio',
+    'Shraddha Tithi Finder': 'shraddha_tithi',
+    'Shubho Alarm': 'shubho_alarm',
+    'Sky Map Lite': 'sky_map_lite',
+    'Smart 30-Day Agenda': 'smart_agenda',
+    'Smart Agenda': 'smart_agenda',
+    'Smart Digest': 'smart_notification_digest',
+    'Smart Notification Digest': 'smart_notification_digest',
+    'Smart Reminder Center': 'reminder_center',
+    'Smart Sadhana Coach': 'sadhana_coach',
+    'Smart Search': 'smart_search',
+    'Smart Silent Hours': 'silent_hours',
+    'Solar System Cinematic Mode': 'solar_cinematic_mode',
+    'Sunlight Window Planner': 'sunlight_window',
+    'Sunrise Direction Visualizer': 'sunrise_direction',
+    'Super 30 Features': 'super30',
+    'Temple & Mela Map': 'temple_mela_map',
+    'Temple / Puja Schedule': 'temple_schedule',
+    'Temple Bell Reminder': 'temple_bell_time',
+    'Temple Visit Journal': 'temple_visit_journal',
+    'Theme Store': 'premium_theme_store',
+    'Time Machine': 'panchang_time_machine',
+    'Tithi Anniversary': 'tithi_anniversary',
+    'Today Smart': 'today_panchang',
+    'Travel / Yatra Planner': 'travel_planner',
+    'Travel Planner': 'travel_planner',
+    'Universal Search 2.0': 'universal_search',
+    'Utility Zones': 'vastu_utility_zones',
+    'Vastu Hub': 'vastu',
+    'Verified Knowledge Mode': 'verified_knowledge',
+    'Virtual Puja Room': 'virtual_puja_room',
+    'Weather + Panchang': 'weather_panchang',
+    'Weather Quick View': 'weather_quick',
+    'Widget Pack Pro': 'widget_pack_pro',
+    'World Clock': 'world_clock',
+    'Year Map': 'my_year_map',
+    'অভিজিৎ মুহূর্ত': 'abhijit_muhurta',
+    'অমাবস্যা': 'amavasya',
+    'আজকের ইতিহাস': 'today_history',
+    'আজকের পঞ্চাঙ্গ': 'today_panchang',
+    'আজকের পঞ্জিকা': 'today_panchang',
+    'আজকের রাশি': 'rashi_today',
+    'আমার Notes': 'notes',
+    'ইতিহাস ও মহাপুরুষ': 'history_mahapurush',
+    'উপবাস তথ্য': 'upobash_info',
+    'একাদশী': 'ekadashi',
+    'কুষ্ঠি মিলন': 'kundli_milan',
+    'ক্লাউড ব্যাকআপ': 'cloud_backup',
+    'গৃহ ও বাস্তু': 'vastu',
+    'গৃহপ্রবেশ শুভদিন': 'griha_pravesh',
+    'ঘটি • পলা • প্রহর': 'ghati_pala_prahar',
+    'চন্দ্র কুষ্ঠি চার্ট': 'kundli',
+    'চন্দ্রদর্শন Alert': 'chandradarshan_alert',
+    'চন্দ্রোদয় ও চন্দ্রাস্ত': 'moonrise_moonset',
+    'জপ কাউন্টার': 'japa_counter',
+    'জীবন্ত বাংলা গ্রাম': 'live_village',
+    'জোয়ার-ভাটা Calendar': 'tide_calendar',
+    'তারিখ রূপান্তর': 'date_converter',
+    'তিথি পরিবর্তন ঘড়ি': 'tithi_transition_clock',
+    'তিথি বিস্তারিত': 'tithi_details',
+    'তিথির অর্থ': 'tithi_details',
+    'দিক ও ব্রহ্মস্থান': 'vastu_directions',
+    'নক্ষত্র': 'nakshatra',
+    'নোটস': 'notes',
+    'পঞ্জিকা PDF এক্সপোর্ট': 'pdf_export',
+    'পঞ্জিকা টাইম মেশিন': 'panchang_time_machine',
+    'পঞ্জিকা দিন তুলনা': 'panchang_compare',
+    'পারিবারিক ক্যালেন্ডার': 'family_calendar',
+    'পূর্ণিমা': 'purnima',
+    'প্রিমিয়াম': 'premium_center',
+    'প্রিমিয়াম ঐতিহ্য ল্যাব': 'premium_heritage',
+    'বাংলা Anniversary Calculator': 'bengali_anniversary',
+    'বাংলা ঋতু Dashboard': 'season_dashboard',
+    'বাংলা ক্যালেন্ডার': 'calendar',
+    'বাংলা ব্রত ও আচার Library': 'ritual_library',
+    'বাংলা মাসের গল্প': 'bengali_month_story',
+    'ব্রত Tracker': 'brata_tracker',
+    'ব্রাহ্মমুহূর্ত লাইভ ঘড়ি': 'brahma_muhurta_clock',
+    'ভূমিপূজা শুভদিন': 'bhumi_puja',
+    'মন্দির ও পূজার সময়সূচি': 'temple_schedule',
+    'মাসের সারাংশ': 'month_summary',
+    'রাশি + পঞ্জিকা Fusion': 'rashi_panchang_fusion',
+    'রাশি Compatibility': 'rashi_compatibility',
+    'রাশি ইন্টেলিজেন্স': 'rashi_intelligence',
+    'রাহুকাল': 'rahu_kal',
+    'রিমাইন্ডার': 'reminder_center',
+    'লাইভ পঞ্জিকা টাইমিং': 'live_timing',
+    'লাইভ সৌরজগৎ': 'live_solar_system',
+    'লাইভ হোরা ঘড়ি': 'hora_clock',
+    'শিশুর নামের আদ্যক্ষর': 'baby_naming',
+    'শুভ মুহূর্ত': 'shubho_muhurta',
+    'শ্রাদ্ধ তিথি ফাইন্ডার': 'shraddha_tithi',
+    'সূর্যোদয় ও সূর্যাস্ত': 'sunrise_sunset',
+    'সেবা ও দান Ledger': 'seva_donation_ledger',
+    '২৪ ঘণ্টার পঞ্জিকা টাইমলাইন': 'next_24h_panchang',
+    '৮ দিক ও ব্রহ্মস্থান': 'vastu_directions',
+    '⏰ Shubho Alarm': 'shubho_alarm',
+    '⏱️ আগামী ২৪ ঘণ্টা': 'next_24h_panchang',
+    '☁️ ক্লাউড ব্যাকআপ': 'cloud_backup',
+    '⚖️ Panchang Day Compare': 'panchang_compare',
+    '⚡ Performance Center': 'app_update_control',
+    '✅ Accuracy Center': 'accuracy_center',
+    '✅ Home Vastu Checklist': 'vastu_checklist',
+    '❤️ Favourite Day': 'favourite_day',
+    '🆕 Latest 30 • Phase 18': 'latest30',
+    '🌅 Personalized Morning Brief': 'app_notifications',
+    '🌌 Live Solar System': 'live_solar_system',
+    '🌍 বিশ্ব ঘড়ি': 'world_clock',
+    '🌙 Advanced Moon Center': 'advanced_moon_center',
+    '🌟 Daily & Quality 2.0': 'quality20',
+    '🌿 My Daily Routine': 'daily_routine',
+    '🎁 Family Occasion Assistant': 'family_occasion_assistant',
+    '🎉 উৎসব পোস্টার মেকার': 'festival_poster',
+    '🎊 Festival Smart Dashboard': 'festival_smart_dashboard',
+    '🎙️ বাংলা Panjika Voice': 'smart_search',
+    '🏠 গৃহ ও বাস্তু': 'vastu',
+    '👨‍👩‍👧 Family Dashboard 2.0': 'family_dashboard',
+    '👨‍👩‍👧 Family Upcoming Board': 'family_upcoming_board',
+    '👨‍👩‍👧‍👦 পারিবারিক ক্যালেন্ডার': 'family_calendar',
+    '💎 Premium Heritage': 'premium_heritage',
+    '💎 Premium Theme Store': 'premium_theme_store',
+    '💎 SUPER 30 Features': 'super30',
+    '💎 প্রিমিয়াম ঐতিহ্য ল্যাব': 'premium_heritage',
+    '💎 প্রিমিয়াম সেন্টার': 'premium_center',
+    '💞 কুষ্ঠি মিলন': 'kundli_milan',
+    '📄 মাসিক পঞ্জিকা PDF এক্সপোর্ট': 'pdf_export',
+    '📊 মাসের Summary': 'month_summary',
+    '📐 Room Planner Check': 'vastu_room_planner',
+    '📓 আমার পঞ্জিকা দিনলিপি': 'panjika_diary',
+    '📖 তিথির অর্থ': 'tithi_details',
+    '📖 বাংলা ব্রত ও আচার Library': 'ritual_library',
+    '📜 ইতিহাস ও মহাপুরুষ': 'history_mahapurush',
+    '📝 আমার নোটস': 'notes',
+    '📡 Live Muhurta Radar': 'live_muhurta_radar',
+    '📤 Premium Share Studio': 'share_studio',
+    '📤 পঞ্চাঙ্গ শেয়ার কার্ড': 'daily_share_card',
+    '📱 Home Widget': 'home_widget',
+    '📱 Widget Pack Pro': 'widget_pack_pro',
+    '📴 Offline First Mode': 'offline_first',
+    '📿 জপ কাউন্টার': 'japa_counter',
+    '🔄 বাংলা ↔ ইংরেজি তারিখ': 'date_converter',
+    '🔎 Universal Search 2.0': 'universal_search',
+    '🔐 Private Family Vault': 'family_vault',
+    '🔔 Intelligent Notification Rules': 'notification_rules',
+    '🔔 Smart Notification Digest': 'smart_notification_digest',
+    '🔔 Smart Reminder Center': 'reminder_center',
+    '🔤 শিশুর নামের আদ্যক্ষর': 'baby_naming',
+    '🔥 Kitchen & Puja': 'vastu_kitchen_puja',
+    '🔥 Sadhana Streak': 'sadhana_streak',
+    '🔮 রাশি Intelligence': 'rashi_intelligence',
+    '🕯️ শ্রাদ্ধ তিথি ফাইন্ডার': 'shraddha_tithi',
+    '🕰️ পঞ্জিকা Time Machine': 'panchang_time_machine',
+    '🗓️ Bengali Life Planner': 'life_planner',
+    '🗓️ Bengali Year Timeline': 'bengali_year_journey',
+    '🗓️ Smart 30-Day Agenda': 'smart_agenda',
+    '🗺️ My Year Map': 'my_year_map',
+    '🚪 Main Door & Plot': 'vastu_plot_facing',
+    '🚿 Utility Zones': 'vastu_utility_zones',
+    '🛏️ Bedroom & Study': 'vastu_bedroom_study',
+    '🛕 মন্দির ও পূজার সময়সূচি': 'temple_schedule',
+    '🥗 উপবাস তথ্য': 'upobash_info',
+    '🧓 Elder Mode': 'elder_mode',
+    '🧭 Travel Panchang Planner': 'travel_planner',
+    '🧭 আজকের স্মার্ট পঞ্জিকা': 'today_panchang',
+    '🧭 ৮ দিক ও ব্রহ্মস্থান': 'vastu_directions',
+    '🪐 চন্দ্র কুষ্ঠি চার্ট': 'kundli',
+    '🪔 Puja Step-by-Step': 'puja_step_mode',
+  };
+  static const Map<String, String> _phase18IdToKey = {
+    'sky_map': 'sky_map_lite',
+    'eclipse': 'eclipse_center',
+    'tide': 'tide_calendar',
+    'season': 'season_dashboard',
+    'sun_direction': 'sunrise_direction',
+    'lamp': 'app_notifications',
+    'brahma': 'brahma_muhurta_clock',
+    'samagri': 'puja_samagri_generator',
+    'anniversary': 'bengali_anniversary',
+    'birthday': 'bengali_birthday',
+    'tithi_anniversary': 'tithi_anniversary',
+    'temple_bell': 'temple_bell_time',
+    'month_story': 'bengali_month_story',
+    'alpana': 'alpana_generator',
+    'festival_route': 'festival_route_timeline',
+    'tithi_clock': 'tithi_transition_clock',
+    'moon_alert': 'chandradarshan_alert',
+    'yatra': 'travel_planner',
+    'heritage': 'heritage_map',
+    'sound': 'festival_sound_mode',
+    'calculator': 'panchang_calculator_hub',
+    'date100': 'hundred_year_explorer',
+    'night': 'night_panchang_mode',
+    'duty': 'family_festival_duty',
+    'offline_pack': 'offline_festival_pack',
+    'silent': 'silent_hours',
+    'memory': 'festival_memory_timeline',
+    'meditation': 'meditation_timer',
+    'today': 'one_tap_today',
+    'streak': 'sadhana_streak',
+  };
+  static const Map<int, String> _super30IdToKey = {
+    1: 'today_panchang',
+    2: 'best_day_finder',
+    3: 'panchang_compare',
+    4: 'festival_theme_engine',
+    5: 'nearby_temple',
+    6: 'family_qr_sync',
+    7: 'elder_mode',
+    8: 'smart_search',
+    9: 'reminder_center',
+    10: 'app_notifications',
+    11: 'widget_pack_pro',
+    12: 'life_planner',
+    13: 'personal_year_dashboard',
+    14: 'sadhana_coach',
+    15: 'advanced_moon_center',
+    16: 'travel_planner',
+    17: 'daily_share_card',
+    18: 'festival_poster',
+    19: 'today_history',
+    20: 'weather_panchang',
+    21: 'agriculture_calendar',
+    22: 'temple_mela_map',
+    23: 'offline_year_pack',
+    24: 'family_vault',
+    25: 'multi_device_sync',
+    26: 'accuracy_center',
+    27: 'universal_search',
+    28: 'dynamic_home',
+    29: 'sadhana_streak',
+    30: 'panchang_calculator_hub',
+  };
+  static const Map<String, String> _phase14TitleToKey = {
+    'Dynamic Home 2.0': 'dynamic_home',
+    'Calendar Quick Action': 'calendar_quick_action',
+    'Advanced Moon Center': 'advanced_moon_center',
+    'Festival Smart Dashboard': 'festival_smart_dashboard',
+    'Puja Step-by-Step': 'puja_step_mode',
+    'ব্রত ও আচার Library': 'ritual_library',
+    'Family Dashboard 2.0': 'family_dashboard',
+    'Bengali Year Timeline': 'bengali_year_journey',
+    'Notification Rules': 'notification_rules',
+    'Widget Pack Pro': 'widget_pack_pro',
+    'Premium Theme Store': 'premium_theme_store',
+    'Universal Search 2.0': 'universal_search',
+    'Premium Share Studio': 'share_studio',
+    'Private Family Vault': 'family_vault',
+    'Performance Center': 'app_update_control',
+    '5-Tab Navigation': 'profile',
+    'Elder Mode': 'elder_mode',
+    'Offline First': 'offline_first',
+    'Accuracy Center': 'accuracy_center',
+    'Premium Dashboard 2.0': 'premium_dashboard',
+  };
+  static const Map<String, String> _premium12IdToKey = {
+    'hora': 'hora_clock',
+    'ghati': 'ghati_pala_prahar',
+    'capsule': 'time_capsule',
+    'prep': 'festival_preparation_timeline',
+    'brata': 'brata_tracker',
+    'tradition': 'family_tradition_book',
+    'temple': 'temple_visit_journal',
+    'seva': 'seva_donation_ledger',
+    'budget': 'festival_budget',
+    'golden': 'sunlight_window',
+  };
+
+  static String _cleanTitle(String title) {
+    return title
+        .replaceFirst(RegExp(r'^[^A-Za-z0-9\u0980-\u09FF]+'), '')
+        .trim();
+  }
+
+  static String? keyForTitle(String title) =>
+      _titleToKey[title] ?? _titleToKey[_cleanTitle(title)];
+  static String keyForPhase18(String id) => _phase18IdToKey[id] ?? 'latest30';
+  static String keyForSuper30(int id) => _super30IdToKey[id] ?? 'super30';
+  static String keyForPhase14(String title) =>
+      _phase14TitleToKey[title] ?? keyForTitle(title) ?? 'quality20';
+  static String keyForPremium12(String id) =>
+      _premium12IdToKey[id] ?? 'premium_heritage';
+}
+
+bool adminFeatureCanOpenKey(BuildContext context, String key, String title) {
+  final admin = AdminRemoteConfig.instance;
+  if (!admin.featureEnabled(key)) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$title — Admin থেকে সাময়িকভাবে বন্ধ রাখা হয়েছে')),
+    );
+    return false;
+  }
+  if (admin.featurePremium(key) && !AppSettings.instance.hasPremiumAccess) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PremiumScreen()),
+    );
+    return false;
+  }
+  return true;
+}
+
+bool adminFeatureCanOpen(BuildContext context, String title) {
+  final key = AdminFeatureRegistry.keyForTitle(title);
+  if (key == null) return true;
+  return adminFeatureCanOpenKey(context, key, title);
+}
+
+class _AdminMaintenanceScreen extends StatelessWidget {
+  const _AdminMaintenanceScreen();
+  @override
+  Widget build(BuildContext context) {
+    final admin = AdminRemoteConfig.instance;
+    return Material(
+      color: const Color(0xFF061125),
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('🛠️', style: TextStyle(fontSize: 58)),
+                const SizedBox(height: 16),
+                const Text(
+                  'সাময়িক রক্ষণাবেক্ষণ চলছে',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFFFD36E),
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  admin.maintenanceMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    height: 1.55,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: () => admin.refresh(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('আবার চেষ্টা করুন'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class BanglaPanjikaApp extends StatelessWidget {
   const BanglaPanjikaApp({super.key});
 
@@ -1350,14 +2085,24 @@ class BanglaPanjikaApp extends StatelessWidget {
         // রাখা আছে যাতে কার্ড/বাটনের লেআউট ভেঙে না যায়।
         builder: (context, child) {
           final mq = MediaQuery.of(context);
-          return MediaQuery(
-            data: mq.copyWith(
-              textScaler: mq.textScaler.clamp(
-                minScaleFactor: Phase14Prefs.elderMode ? 1.50 : 1.32,
-                maxScaleFactor: Phase14Prefs.elderMode ? 1.90 : 1.65,
-              ),
-            ),
-            child: child!,
+
+          return AnimatedBuilder(
+            animation: AdminRemoteConfig.instance,
+            builder: (context, _) {
+              if (AdminRemoteConfig.instance.maintenanceMode) {
+                return const _AdminMaintenanceScreen();
+              }
+
+              return MediaQuery(
+                data: mq.copyWith(
+                  textScaler: mq.textScaler.clamp(
+                    minScaleFactor: Phase14Prefs.elderMode ? 1.50 : 1.32,
+                    maxScaleFactor: Phase14Prefs.elderMode ? 1.90 : 1.65,
+                  ),
+                ),
+                child: child!,
+              );
+            },
           );
         },
         initialRoute: '/splash',
@@ -3893,6 +4638,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
         const SizedBox(height: 14),
         const _Phase18HomeCard(),
         const SizedBox(height: 14),
+        const _AdminLiveBannerSlider(),
+        const SizedBox(height: 12),
         const _RashifalHomeCard(),
         const SizedBox(height: 14),
         const _AllServicesHomeButton(),
@@ -4033,6 +4780,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
               const _Super30HomeCard(),
               const SizedBox(height: 12),
               const _Phase18HomeCard(),
+              const SizedBox(height: 12),
+              const _AdminLiveBannerSlider(),
               const SizedBox(height: 12),
               const _RashifalHomeCard(),
               const SizedBox(height: 12),
@@ -8017,84 +8766,155 @@ class _AnalogClockPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
+    final radius = math.min(size.width, size.height) / 2;
 
-    // ঘড়ির ডায়াল
+    // Outer shadow
     canvas.drawCircle(
-      center,
-      radius - 3,
-      Paint()..color = Colors.white.withValues(alpha: 0.18),
-    );
-    canvas.drawCircle(
-      center,
-      radius - 3,
+      center.translate(0, 1.5),
+      radius - 1,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.9)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6,
+        ..color = Colors.black.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
 
-    // ১২টি ঘণ্টার দাগ
-    for (int i = 0; i < 12; i++) {
-      final angle = (i * 30) * math.pi / 180;
-      final isMajor = i % 3 == 0;
-      final outer = Offset(
-        center.dx + (radius - 4) * math.sin(angle),
-        center.dy - (radius - 4) * math.cos(angle),
+    // Gold metallic rim
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = const RadialGradient(
+          colors: [
+            Color(0xFFFFF4B0),
+            Color(0xFFFFD36E),
+            Color(0xFFB87312),
+            Color(0xFFFFD96A),
+          ],
+          stops: [0.0, 0.48, 0.78, 1.0],
+        ).createShader(Rect.fromCircle(center: center, radius: radius)),
+    );
+
+    final faceRadius = radius - 3.2;
+
+    // Deep glass face
+    canvas.drawCircle(
+      center,
+      faceRadius,
+      Paint()
+        ..shader = const RadialGradient(
+          center: Alignment(-0.25, -0.30),
+          radius: 1.15,
+          colors: [Color(0xFF35506F), Color(0xFF152942), Color(0xFF07121F)],
+        ).createShader(Rect.fromCircle(center: center, radius: faceRadius)),
+    );
+
+    // Glass reflection
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: faceRadius - 1),
+      math.pi * 1.08,
+      math.pi * 0.70,
+      false,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.13)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+
+    // 60 real clock ticks
+    for (int i = 0; i < 60; i++) {
+      final angle = i * math.pi / 30;
+      final major = i % 5 == 0;
+
+      final outer = faceRadius - 2;
+      final inner = outer - (major ? 5.0 : 2.2);
+
+      final p1 = Offset(
+        center.dx + inner * math.sin(angle),
+        center.dy - inner * math.cos(angle),
       );
-      final inner = Offset(
-        center.dx + (radius - (isMajor ? 10 : 6)) * math.sin(angle),
-        center.dy - (radius - (isMajor ? 10 : 6)) * math.cos(angle),
+
+      final p2 = Offset(
+        center.dx + outer * math.sin(angle),
+        center.dy - outer * math.cos(angle),
       );
+
       canvas.drawLine(
-        inner,
-        outer,
+        p1,
+        p2,
         Paint()
-          ..color = Colors.white.withValues(alpha: 0.85)
-          ..strokeWidth = isMajor ? 1.8 : 1.0
+          ..color = major
+              ? const Color(0xFFFFD36E)
+              : Colors.white.withValues(alpha: 0.50)
+          ..strokeWidth = major ? 1.6 : 0.65
           ..strokeCap = StrokeCap.round,
       );
     }
 
-    // ১২, ৩, ৬, ৯ — চারটে প্রধান ঘণ্টার সংখ্যা ডায়ালে
-    void drawNumber(String text, int hourIndex) {
-      final angle = (hourIndex * 30) * math.pi / 180;
-      final r = radius * 0.6;
+    // 12 / 3 / 6 / 9
+    void drawNumber(String text, double angleDeg) {
+      final angle = (angleDeg - 90) * math.pi / 180;
+      final r = faceRadius * 0.63;
+
       final pos = Offset(
-        center.dx + r * math.sin(angle),
-        center.dy - r * math.cos(angle),
+        center.dx + r * math.cos(angle),
+        center.dy + r * math.sin(angle),
       );
+
       final tp = TextPainter(
         text: TextSpan(
           text: text,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.92),
-            fontSize: radius * 0.34,
-            fontWeight: FontWeight.w700,
+            color: const Color(0xFFFFE9A8),
+            fontSize: radius * 0.31,
+            fontWeight: FontWeight.w800,
+            height: 1,
           ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
+
       tp.paint(canvas, pos - Offset(tp.width / 2, tp.height / 2));
     }
 
     drawNumber('12', 0);
-    drawNumber('3', 3);
-    drawNumber('6', 6);
-    drawNumber('9', 9);
+    drawNumber('3', 90);
+    drawNumber('6', 180);
+    drawNumber('9', 270);
 
-    final hourAngle = ((istTime.hour % 12) + istTime.minute / 60) * 30;
-    final minuteAngle = (istTime.minute + istTime.second / 60) * 6;
-    final secondAngle = istTime.second * 6.0;
+    final second = istTime.second + istTime.millisecond / 1000.0;
+    final minute = istTime.minute + second / 60.0;
+    final hour = (istTime.hour % 12) + minute / 60.0;
 
-    void drawHand(double angleDeg, double length, double width, Color color) {
+    void drawHand(
+      double angleDeg,
+      double length,
+      double width,
+      Color color, {
+      double tail = 0,
+    }) {
       final angle = (angleDeg - 90) * math.pi / 180;
+
       final end = Offset(
         center.dx + length * math.cos(angle),
         center.dy + length * math.sin(angle),
       );
+
+      final start = Offset(
+        center.dx - tail * math.cos(angle),
+        center.dy - tail * math.sin(angle),
+      );
+
+      // hand shadow
       canvas.drawLine(
-        center,
+        start.translate(0.7, 0.7),
+        end.translate(0.7, 0.7),
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.48)
+          ..strokeWidth = width + 1
+          ..strokeCap = StrokeCap.round,
+      );
+
+      canvas.drawLine(
+        start,
         end,
         Paint()
           ..color = color
@@ -8103,25 +8923,56 @@ class _AnalogClockPainter extends CustomPainter {
       );
     }
 
-    drawHand(hourAngle, radius * 0.40, 2.8, Colors.white);
-    drawHand(minuteAngle, radius * 0.62, 2.0, Colors.white);
-    drawHand(secondAngle, radius * 0.68, 1.0, const Color(0xFFFFD36E));
+    // Hour hand
+    drawHand(
+      hour * 30,
+      radius * 0.43,
+      3.2,
+      const Color(0xFFFFF1CE),
+      tail: radius * 0.05,
+    );
 
-    canvas.drawCircle(center, 2.4, Paint()..color = const Color(0xFFFFD36E));
+    // Minute hand
+    drawHand(minute * 6, radius * 0.62, 2.1, Colors.white, tail: radius * 0.07);
+
+    // Red second hand
+    drawHand(
+      second * 6,
+      radius * 0.72,
+      1.0,
+      const Color(0xFFFF4B4B),
+      tail: radius * 0.16,
+    );
+
+    // Center pin
+    canvas.drawCircle(center, 3.2, Paint()..color = const Color(0xFF6F4710));
+
+    canvas.drawCircle(
+      center,
+      2.2,
+      Paint()
+        ..shader = const RadialGradient(
+          colors: [Color(0xFFFFF4B0), Color(0xFFFFC83D), Color(0xFFA96800)],
+        ).createShader(Rect.fromCircle(center: center, radius: 2.2)),
+    );
+
+    canvas.drawCircle(
+      center.translate(-0.5, -0.5),
+      0.6,
+      Paint()..color = Colors.white.withValues(alpha: 0.85),
+    );
   }
 
   @override
   bool shouldRepaint(covariant _AnalogClockPainter old) =>
-      old.istTime.second != istTime.second;
+      old.istTime.second != istTime.second ||
+      old.istTime.minute != istTime.minute ||
+      old.istTime.hour != istTime.hour;
 }
 
 // =====================================================================
-// বিশ্ব ঘড়ি (World Clock) — নিচের নেভিগেশন বারের ঘড়ি-বাটনে চাপলে খোলে
+// WORLD CLOCK
 // =====================================================================
-
-/// একটা দেশ/শহরের real টাইমজোন তথ্য — IANA টাইমজোন আইডি (tzId) দিয়ে
-/// প্রকৃত অফসেট (DST-সহ, যেখানে প্রযোজ্য) বের করা হয়; ওয়েবে টাইমজোন
-/// ডেটাবেস লোড করা যায় না বলে সেখানে [fallbackOffset] (ঘণ্টায়) ব্যবহার হয়।
 class _WorldCity {
   final String name;
   final String flag;
@@ -16981,6 +17832,210 @@ class _PanjikaArtPainter extends CustomPainter {
 /// নম্বর ঘরে পড়ছে বের করে ঐতিহ্যবাহী "চন্দ্র গোচর ফল" দেখানো হয়।
 /// চাঁদ প্রতি ~২.২৫ দিনে রাশি বদলায়, আর শুভ সংখ্যা/রং তিথি অনুযায়ী
 /// পাল্টায় — তাই প্রতিদিন সকালে অ্যাপ খুললে ফল নিজে থেকেই আলাদা।
+
+class _AdminLiveBannerSlider extends StatefulWidget {
+  const _AdminLiveBannerSlider();
+
+  @override
+  State<_AdminLiveBannerSlider> createState() => _AdminLiveBannerSliderState();
+}
+
+class _AdminLiveBannerSliderState extends State<_AdminLiveBannerSlider> {
+  final PageController _controller = PageController();
+  Timer? _timer;
+  int _page = 0;
+  int _timerCount = 0;
+
+  String _fullImageUrl(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return raw;
+    }
+
+    if (raw.startsWith('/')) {
+      return 'https://shripanchang.in$raw';
+    }
+
+    return 'https://shripanchang.in/$raw';
+  }
+
+  List<Map<String, dynamic>> _bannerItems() {
+    final admin = AdminRemoteConfig.instance;
+
+    if (!admin.featureEnabled('home_banner')) {
+      return const [];
+    }
+
+    return admin.banners
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((e) {
+          final target = (e['target'] ?? 'all').toString().toLowerCase();
+          final image = _fullImageUrl(e['image_url']);
+
+          return image.isNotEmpty && (target == 'all' || target == 'app');
+        })
+        .toList();
+  }
+
+  void _syncTimer(int count) {
+    if (count <= 1) {
+      _timer?.cancel();
+      _timer = null;
+      _timerCount = count;
+      return;
+    }
+
+    if (_timer != null && _timer!.isActive && _timerCount == count) {
+      return;
+    }
+
+    _timer?.cancel();
+    _timerCount = count;
+
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_controller.hasClients || count <= 1) return;
+
+      _page = (_page + 1) % count;
+
+      _controller.animateToPage(
+        _page,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: AdminRemoteConfig.instance,
+      builder: (context, _) {
+        final items = _bannerItems();
+
+        if (items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _syncTimer(items.length);
+        });
+
+        return Column(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: AspectRatio(
+                aspectRatio: 16 / 6.2,
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: items.length,
+                  onPageChanged: (value) {
+                    setState(() => _page = value);
+                  },
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final imageUrl = _fullImageUrl(item['image_url']);
+                    final title = (item['title_bn'] ?? '').toString().trim();
+
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: const Color(0xFFF4F4F4),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.image_not_supported_outlined,
+                                size: 36,
+                                color: Colors.grey,
+                              ),
+                            );
+                          },
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+
+                            return Container(
+                              color: const Color(0xFFF7F7F7),
+                              alignment: Alignment.center,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            );
+                          },
+                        ),
+                        if (title.isNotEmpty)
+                          Positioned(
+                            left: 12,
+                            right: 12,
+                            bottom: 10,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0x99000000),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+            if (items.length > 1) ...[
+              const SizedBox(height: 7),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  items.length,
+                  (index) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    width: _page == index ? 18 : 7,
+                    height: 7,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      color: _page == index
+                          ? const Color(0xFFC62828)
+                          : const Color(0xFFD4D4D4),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _RashifalHomeCard extends StatefulWidget {
   const _RashifalHomeCard();
 
@@ -17012,6 +18067,9 @@ class _RashifalHomeCardState extends State<_RashifalHomeCard> {
 
   @override
   Widget build(BuildContext context) {
+    if (!AdminRemoteConfig.instance.featureEnabled('rashifal_section')) {
+      return const SizedBox.shrink();
+    }
     final now = DateTime.now();
     final moonIdx = PanchangCalculator.rashiIndexFor(now);
     final tithi = PanchangCalculator.tithiFor(now);
@@ -31899,6 +32957,7 @@ class SuperServicesScreen extends StatelessWidget {
   const SuperServicesScreen({super.key});
 
   void _open(BuildContext context, String title) {
+    if (!adminFeatureCanOpen(context, title)) return;
     void pushPage(Widget page) {
       Navigator.push(context, MaterialPageRoute(builder: (_) => page));
     }

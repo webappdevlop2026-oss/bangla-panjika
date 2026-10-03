@@ -1,8 +1,9 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+﻿<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- আবহাওয়া/পেমেন্ট (Razorpay) সহ যেকোনো নেটওয়ার্ক কলের জন্য প্রয়োজন -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- রিমাইন্ডারের নোটিফিকেশন দেখানোর জন্য (Android 13+ এ ব্যবহারকারীর অনুমতি লাগে) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <!-- ফোন রিস্টার্ট হলেও সেট করা রিমাইন্ডার যেন বহাল থাকে -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <!-- ফোনের real-time লোকেশন ধরে সূর্যোদয়/অস্ত, আবহাওয়া ও বৃষ্টি সঠিকভাবে দেখানোর জন্য -->
@@ -102,3 +103,4 @@
         </intent>
     </queries>
 </manifest>
+
