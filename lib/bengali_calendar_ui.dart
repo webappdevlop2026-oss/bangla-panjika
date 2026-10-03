@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'bengali_calendar_screen.dart';
+
 class BengaliCalendarUI extends StatelessWidget {
   final String bengaliMonth;
   final String bengaliYear;
@@ -108,7 +110,6 @@ class BengaliCalendarUI extends StatelessWidget {
               ],
             ),
           ),
-
           Container(
             margin: const EdgeInsets.fromLTRB(7, 9, 7, 5),
             padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 2),
@@ -128,7 +129,6 @@ class BengaliCalendarUI extends StatelessWidget {
               ],
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 5),
             child: GridView.builder(
@@ -209,9 +209,7 @@ class BengaliCalendarUI extends StatelessWidget {
                               : const Color(0xFF20152C),
                         ),
                       ),
-
                       const SizedBox(height: 3),
-
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 5,
@@ -230,7 +228,6 @@ class BengaliCalendarUI extends StatelessWidget {
                           ),
                         ),
                       ),
-
                       if (tithi.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -246,7 +243,6 @@ class BengaliCalendarUI extends StatelessWidget {
                           ),
                         ),
                       ],
-
                       if (festival.isNotEmpty) ...[
                         const SizedBox(height: 3),
                         Text(
@@ -268,9 +264,35 @@ class BengaliCalendarUI extends StatelessWidget {
               },
             ),
           ),
-
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 14, 10, 0),
+            child: SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const BengaliCalendarScreen(),
+                    ),
+                  );
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.calendar_view_month_rounded),
+                label: const Text(
+                  'সহজ ক্যালেন্ডার',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 14),
-
           Container(
             margin: const EdgeInsets.fromLTRB(10, 0, 10, 12),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
