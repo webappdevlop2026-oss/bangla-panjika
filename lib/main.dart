@@ -34249,7 +34249,7 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার',
+                      // EASY_CALENDAR_STANDALONE_BUTTON
                     ),
                   ),
                   const SizedBox(height: 10),
