@@ -1,7 +1,7 @@
 part of 'main.dart';
 
-/// বড় লেখা, কম ভিড় এবং স্পষ্ট রঙে তৈরি সহজ মাসিক ক্যালেন্ডার।
-/// মূল/আধুনিক ক্যালেন্ডার অপরিবর্তিত থাকে; সেখান থেকে এই স্ক্রিন খোলা হয়।
+/// বয়স্কদের জন্য পরিষ্কার, বড় লেখা এবং কম ভিড়ের মাসিক বাংলা ক্যালেন্ডার।
+/// মূল/আধুনিক ক্যালেন্ডার অপরিবর্তিত থাকে।
 class EasyBengaliCalendarScreen extends StatefulWidget {
   const EasyBengaliCalendarScreen({super.key});
 
@@ -13,6 +13,10 @@ class EasyBengaliCalendarScreen extends StatefulWidget {
 class _EasyBengaliCalendarScreenState
     extends State<EasyBengaliCalendarScreen> {
   DateTime _anchor = DateTime.now();
+  String _mode = 'সম্পূর্ণ মাস';
+
+  static const _modes = ['সম্পূর্ণ মাস', 'বিশেষ দিন', 'বিবাহ'];
+  static const _weekdays = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
 
   void _changeMonth(int direction) {
     final info = BengaliDateUtil.monthInfoFor(_anchor);
@@ -33,32 +37,27 @@ class _EasyBengaliCalendarScreenState
     final trailing = (7 - ((leading + totalDays) % 7)) % 7;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFBF4),
+      backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
         backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF172554),
-        elevation: 0.5,
-        titleSpacing: 8,
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'সহজ ক্যালেন্ডার',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
-            ),
-            Text(
-              'বড় লেখা • সহজে দেখুন',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ],
+        foregroundColor: const Color(0xFF222222),
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        titleSpacing: 4,
+        title: const Text(
+          'সহজ ক্যালেন্ডার',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
         ),
         actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.auto_awesome_rounded, size: 17),
-            label: const Text(
-              'আধুনিক',
-              style: TextStyle(fontWeight: FontWeight.w800),
+          TextButton(
+            onPressed: _goToday,
+            child: const Text(
+              'আজ',
+              style: TextStyle(
+                color: Color(0xFFC62828),
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           const SizedBox(width: 4),
@@ -66,60 +65,57 @@ class _EasyBengaliCalendarScreenState
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(8, 10, 8, 24),
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 20),
           children: [
-            _monthHeader(info),
+            _buildMonthTitle(info),
+            const SizedBox(height: 8),
+            _buildModeBar(),
             const SizedBox(height: 10),
-            _weekdayHeader(),
-            const SizedBox(height: 4),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: leading + totalDays + trailing,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                childAspectRatio: 0.52,
-                crossAxisSpacing: 2,
-                mainAxisSpacing: 2,
-              ),
-              itemBuilder: (context, index) {
-                if (index < leading || index >= leading + totalDays) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F1EA),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                  );
-                }
-
-                final bengaliDay = index - leading + 1;
-                final greg = info.start.add(Duration(days: bengaliDay - 1));
-                return _dayCell(greg, bengaliDay, info);
-              },
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            _buildWeekHeader(),
+            const SizedBox(height: 2),
+            DecoratedBox(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE8E0D6)),
+                border: Border.all(color: const Color(0xFFE2E2E2)),
               ),
-              child: const Row(
-                children: [
-                  Icon(Icons.touch_app_rounded, color: Color(0xFF1D4ED8)),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'যে কোনো তারিখে চাপলে তিথি ও বিশেষ দিনের বিস্তারিত দেখা যাবে।',
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.35,
-                        fontWeight: FontWeight.w700,
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: leading + totalDays + trailing,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  childAspectRatio: 0.58,
+                ),
+                itemBuilder: (context, index) {
+                  if (index < leading || index >= leading + totalDays) {
+                    return Container(
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF7F7F7),
+                        border: Border(
+                          right: BorderSide(color: Color(0xFFE7E7E7)),
+                          bottom: BorderSide(color: Color(0xFFE7E7E7)),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
+                    );
+                  }
+
+                  final bengaliDay = index - leading + 1;
+                  final greg = info.start.add(Duration(days: bengaliDay - 1));
+                  return _dayCell(greg, bengaliDay, info);
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                'তারিখে চাপলে তিথি ও বিশেষ দিনের বিস্তারিত দেখা যাবে',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF666666),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -128,108 +124,116 @@ class _EasyBengaliCalendarScreenState
     );
   }
 
-  Widget _monthHeader(dynamic info) {
+  Widget _buildMonthTitle(dynamic info) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(6, 12, 6, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE4DDD2)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 8,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(2, 10, 2, 10),
+      child: Row(
         children: [
-          Row(
-            children: [
-              IconButton.filledTonal(
-                tooltip: 'আগের মাস',
-                onPressed: () => _changeMonth(-1),
-                icon: const Icon(Icons.chevron_left_rounded, size: 30),
-              ),
-              Expanded(
-                child: Column(
-                  children: [
-                    Text(
-                      info.name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Color(0xFFB42318),
-                        fontSize: 30,
-                        height: 1.05,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${bnNum(info.year)} বঙ্গাব্দ',
-                      style: const TextStyle(
-                        color: Color(0xFF172554),
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${info.start.day}/${info.start.month}/${info.start.year} – ${info.end.day}/${info.end.month}/${info.end.year}',
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton.filledTonal(
-                tooltip: 'পরের মাস',
-                onPressed: () => _changeMonth(1),
-                icon: const Icon(Icons.chevron_right_rounded, size: 30),
-              ),
-            ],
+          IconButton(
+            tooltip: 'আগের মাস',
+            onPressed: () => _changeMonth(-1),
+            icon: const Icon(Icons.chevron_left_rounded, size: 32),
+            color: const Color(0xFF444444),
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 38,
-            child: FilledButton.icon(
-              onPressed: _goToday,
-              icon: const Icon(Icons.today_rounded, size: 18),
-              label: const Text(
-                'আজকের মাসে ফিরুন',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-              ),
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  '${info.name} ${bnNum(info.year)}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFC62828),
+                    fontSize: 27,
+                    height: 1.1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${info.start.day}/${info.start.month}/${info.start.year} - ${info.end.day}/${info.end.month}/${info.end.year}',
+                  style: const TextStyle(
+                    color: Color(0xFF777777),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
+          ),
+          IconButton(
+            tooltip: 'পরের মাস',
+            onPressed: () => _changeMonth(1),
+            icon: const Icon(Icons.chevron_right_rounded, size: 32),
+            color: const Color(0xFF444444),
           ),
         ],
       ),
     );
   }
 
-  Widget _weekdayHeader() {
-    const days = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
+  Widget _buildModeBar() {
+    return Row(
+      children: _modes.map((mode) {
+        final selected = _mode == mode;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: InkWell(
+              onTap: () => setState(() => _mode = mode),
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFC62828) : Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: selected
+                        ? const Color(0xFFC62828)
+                        : const Color(0xFFD7D7D7),
+                  ),
+                ),
+                child: Text(
+                  mode,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? Colors.white : const Color(0xFF333333),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildWeekHeader() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF4FF),
-        borderRadius: BorderRadius.circular(10),
-      ),
+      color: const Color(0xFFF0F0F0),
       child: Row(
-        children: List.generate(days.length, (i) {
+        children: List.generate(_weekdays.length, (i) {
           return Expanded(
-            child: Text(
-              days[i],
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-                color: i == 0
-                    ? const Color(0xFFC62828)
-                    : const Color(0xFF173B78),
+            child: Container(
+              height: 34,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Color(0xFFDDDDDD)),
+                ),
+              ),
+              child: Text(
+                _weekdays[i],
+                style: TextStyle(
+                  color: i == 0
+                      ? const Color(0xFFC62828)
+                      : const Color(0xFF194F90),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
           );
@@ -246,28 +250,39 @@ class _EasyBengaliCalendarScreenState
     final isSunday = greg.weekday == DateTime.sunday;
     final events = BengaliCalendarData.eventsFor(greg);
     final tithi = PanchangCalculator.tithiFor(greg);
-    final firstEvent = events.isEmpty ? null : events.first;
+
+    final filteredEvents = _mode == 'সম্পূর্ণ মাস'
+        ? events
+        : _mode == 'বিবাহ'
+            ? events
+                .where((e) => e.label.contains('বিবাহ') || e.label.contains('শুভ'))
+                .toList()
+            : events;
+
+    final firstEvent = filteredEvents.isEmpty ? null : filteredEvents.first;
+    final showMoon = tithi.name.contains('পূর্ণিমা') ||
+        tithi.name.contains('অমাবস্যা') ||
+        tithi.name.contains('একাদশী');
 
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
       child: Container(
         padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
         decoration: BoxDecoration(
-          color: isToday
-              ? const Color(0xFFFFF0B8)
-              : isSunday
-                  ? const Color(0xFFFFF2F2)
-                  : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isToday
-                ? const Color(0xFFE3A008)
-                : const Color(0xFFE3DDD5),
-            width: isToday ? 2 : 1,
+          color: isToday ? const Color(0xFFFFF3D9) : Colors.white,
+          border: Border(
+            right: const BorderSide(color: Color(0xFFE7E7E7)),
+            bottom: const BorderSide(color: Color(0xFFE7E7E7)),
+            top: isToday
+                ? const BorderSide(color: Color(0xFFE9B23B), width: 1.5)
+                : BorderSide.none,
+            left: isToday
+                ? const BorderSide(color: Color(0xFFE9B23B), width: 1.5)
+                : BorderSide.none,
           ),
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -275,8 +290,8 @@ class _EasyBengaliCalendarScreenState
                 Text(
                   '${greg.day}',
                   style: const TextStyle(
+                    color: Color(0xFF777777),
                     fontSize: 8,
-                    color: Colors.black54,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -284,8 +299,8 @@ class _EasyBengaliCalendarScreenState
                   const Text(
                     'আজ',
                     style: TextStyle(
+                      color: Color(0xFFC07A00),
                       fontSize: 8,
-                      color: Color(0xFF9A6700),
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -294,28 +309,45 @@ class _EasyBengaliCalendarScreenState
             const SizedBox(height: 1),
             Text(
               bnNum(bengaliDay),
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 26,
-                height: 1.0,
-                fontWeight: FontWeight.w900,
                 color: isSunday
                     ? const Color(0xFFC62828)
-                    : const Color(0xFF173B78),
+                    : const Color(0xFF194F90),
+                fontSize: 27,
+                height: 1.0,
+                fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 3),
-            Text(
-              tithi.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 8,
-                height: 1.1,
-                color: Color(0xFF4B5563),
-                fontWeight: FontWeight.w700,
+            if (showMoon)
+              Text(
+                tithi.name.contains('পূর্ণিমা')
+                    ? '🌕 ${tithi.name}'
+                    : tithi.name.contains('অমাবস্যা')
+                        ? '🌑 ${tithi.name}'
+                        : '◐ ${tithi.name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF555555),
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else
+              Text(
+                tithi.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF666666),
+                  fontSize: 8,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
             if (firstEvent != null) ...[
               const SizedBox(height: 2),
               Text(
@@ -324,10 +356,10 @@ class _EasyBengaliCalendarScreenState
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
+                  color: Color(0xFFC62828),
                   fontSize: 8,
                   height: 1.05,
-                  color: Color(0xFFB42318),
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
@@ -348,6 +380,7 @@ class _EasyBengaliCalendarScreenState
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      backgroundColor: Colors.white,
       builder: (sheetContext) {
         return SafeArea(
           child: Padding(
@@ -359,18 +392,18 @@ class _EasyBengaliCalendarScreenState
                 Text(
                   '${bnNum(bengaliDay)} ${info.name} ${bnNum(info.year)}',
                   style: const TextStyle(
-                    fontSize: 26,
+                    fontSize: 25,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF173B78),
+                    color: Color(0xFF194F90),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   '${greg.day}/${greg.month}/${greg.year}',
                   style: const TextStyle(
-                    fontSize: 15,
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF777777),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 const Divider(height: 24),
