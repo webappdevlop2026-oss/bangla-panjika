@@ -33566,7 +33566,6 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
 
   static const _tabs = [
     'সম্পূর্ণ মাস',
-    'সহজ ক্যালেন্ডার',
     'বিশেষ দিন সমূহ',
     'বিবাহ',
     'অন্নপ্রাশন',
@@ -34220,6 +34219,40 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 20),
                 children: [
+                                    SizedBox(
+                    width: double.infinity,
+                    height: 52 * _tsFactor(context),
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const EasyBengaliCalendarScreen(),
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1765A6),
+                        foregroundColor: Colors.white,
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.calendar_view_month_rounded,
+                        size: 22,
+                      ),
+                      label: const Text(
+                        'সহজ ক্যালেন্ডার',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   // ---- ট্যাব বার (ফিল্টার) ----
                   SizedBox(
                     height: 34 * _tsFactor(context),
@@ -34231,18 +34264,7 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                         final t = _tabs[i];
                         final active = t == _tab;
                         return GestureDetector(
-                          onTap: () {
-                            if (t == 'সহজ ক্যালেন্ডার') {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      const EasyBengaliCalendarScreen(),
-                                ),
-                              );
-                              return;
-                            }
-                            setState(() => _tab = t);
-                          },
+                          onTap: () => setState(() => _tab = t),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 13),
                             alignment: Alignment.center,
