@@ -307,16 +307,26 @@ class _EasyBengaliCalendarScreenState
               ],
             ),
             const SizedBox(height: 1),
-            Text(
-              bnNum(bengaliDay),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: isSunday
-                    ? const Color(0xFFC62828)
-                    : const Color(0xFF194F90),
-                fontSize: 27,
-                height: 1.0,
-                fontWeight: FontWeight.w900,
+            SizedBox(
+              height: 30,
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    bnNum(bengaliDay),
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isSunday
+                          ? const Color(0xFFC62828)
+                          : const Color(0xFF194F90),
+                      fontSize: 27,
+                      height: 1.0,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 3),
