@@ -335,6 +335,10 @@ class _EasyBengaliCalendarScreenState
 
     final isMajorFestival = _isMajorFestival(events);
     final isDurgaFestival = _isDurgaFestival(events);
+    final majorFestivalEvent = isMajorFestival
+        ? events.firstWhere((event) => _isMajorFestival([event]))
+        : null;
+    final majorFestivalLabel = majorFestivalEvent?.label;
 
     final dayTile = InkWell(
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
@@ -392,41 +396,26 @@ class _EasyBengaliCalendarScreenState
                       ),
                     ),
                   ),
-                  if (isToday || isMajorFestival)
+                  if (isToday)
                     Positioned(
                       right: 0,
                       top: 0,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 30),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 3,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isToday
-                                ? const Color(0xFF1565C0)
-                                : isDurgaFestival
-                                    ? const Color(0xFFE65100)
-                                    : const Color(0xFFF59E0B),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              isToday
-                                  ? 'আজ'
-                                  : isDurgaFestival
-                                      ? 'পূজা'
-                                      : 'উৎসব',
-                              maxLines: 1,
-                              softWrap: false,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 8.6,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 3,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1565C0),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Text(
+                          'আজ',
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 8.6,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
@@ -487,7 +476,38 @@ class _EasyBengaliCalendarScreenState
                             showMoon ? FontWeight.w800 : FontWeight.w700,
                       ),
                     ),
-                    if (firstEvent != null) ...[
+                    if (majorFestivalLabel != null) ...[
+                      const SizedBox(height: 2),
+                      Expanded(
+                        child: Center(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 1),
+                            decoration: BoxDecoration(
+                              color: isDurgaFestival
+                                  ? const Color(0xFFFFE0B2)
+                                  : const Color(0xFFFFF3CD),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '${majorFestivalEvent!.icon} $majorFestivalLabel',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: isDurgaFestival
+                                    ? const Color(0xFFB71C1C)
+                                    : const Color(0xFFB45309),
+                                fontSize: isDurgaFestival ? 10.2 : 9.6,
+                                height: 1.0,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ] else if (firstEvent != null) ...[
                       const SizedBox(height: 2),
                       Expanded(
                         child: Center(
@@ -496,15 +516,11 @@ class _EasyBengaliCalendarScreenState
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: isDurgaFestival
-                                  ? const Color(0xFFB71C1C)
-                                  : const Color(0xFFC62828),
-                              fontSize: isMajorFestival ? 9.6 : 8.8,
+                            style: const TextStyle(
+                              color: Color(0xFFC62828),
+                              fontSize: 8.8,
                               height: 1.05,
-                              fontWeight: isMajorFestival
-                                  ? FontWeight.w900
-                                  : FontWeight.w800,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
@@ -527,9 +543,9 @@ class _EasyBengaliCalendarScreenState
       builder: (context, child) {
         final pulse = _festivalPulseController.value;
         final scale = isDurgaFestival
-            ? 0.985 + (0.015 * pulse)
-            : 0.99 + (0.01 * pulse);
-        final moveY = isDurgaFestival ? -1.5 + (3.0 * pulse) : 0.0;
+            ? 0.98 + (0.02 * pulse)
+            : 0.985 + (0.015 * pulse);
+        final moveY = isDurgaFestival ? -1.8 + (3.6 * pulse) : 0.0;
 
         return Transform.translate(
           offset: Offset(0, moveY),
@@ -537,7 +553,22 @@ class _EasyBengaliCalendarScreenState
             scale: scale,
             child: Container(
                 decoration: BoxDecoration(
+                  color: Color.lerp(
+                    isDurgaFestival
+                        ? const Color(0xFFFFF3E0)
+                        : const Color(0xFFFFFBEB),
+                    isDurgaFestival
+                        ? const Color(0xFFFFCC80)
+                        : const Color(0xFFFFE8A3),
+                    pulse,
+                  ),
                   borderRadius: BorderRadius.circular(1),
+                  border: Border.all(
+                    color: isDurgaFestival
+                        ? const Color(0xFFE65100)
+                        : const Color(0xFFF59E0B),
+                    width: 1.4 + (0.8 * pulse),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Color.lerp(
