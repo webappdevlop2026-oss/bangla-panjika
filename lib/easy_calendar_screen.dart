@@ -150,7 +150,7 @@ class _EasyBengaliCalendarScreenState
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.42,
+                  childAspectRatio: 0.88,
                   crossAxisSpacing: 3,
                   mainAxisSpacing: 3,
                 ),
@@ -339,14 +339,14 @@ class _EasyBengaliCalendarScreenState
     final dayTile = InkWell(
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+        padding: const EdgeInsets.fromLTRB(2, 2, 2, 2),
         decoration: BoxDecoration(
           color: isToday
               ? const Color(0xFFEAF4FF)
               : isDurgaFestival
                   ? const Color(0xFFFFF3E0)
                   : Colors.white,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(3),
           border: Border.all(
             color: isToday
                 ? const Color(0xFF1565C0)
@@ -381,7 +381,7 @@ class _EasyBengaliCalendarScreenState
                   '${greg.day}',
                   style: const TextStyle(
                     color: Color(0xFF777777),
-                    fontSize: 8,
+                    fontSize: 7.2,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -429,7 +429,7 @@ class _EasyBengaliCalendarScreenState
             ),
             const SizedBox(height: 1),
             SizedBox(
-              height: 30,
+              height: 24,
               child: Center(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
@@ -444,7 +444,7 @@ class _EasyBengaliCalendarScreenState
                           : isSunday
                               ? const Color(0xFFC62828)
                               : const Color(0xFF194F90),
-                      fontSize: isToday ? 30 : 27,
+                      fontSize: isToday ? 25 : 23,
                       height: 1.0,
                       fontWeight: FontWeight.w900,
                     ),
@@ -492,7 +492,7 @@ class _EasyBengaliCalendarScreenState
                           color: isDurgaFestival
                               ? const Color(0xFFB71C1C)
                               : const Color(0xFFC62828),
-                          fontSize: isMajorFestival ? 8.2 : 7.5,
+                          fontSize: isMajorFestival ? 7.2 : 6.7,
                           height: 1.0,
                           fontWeight: isMajorFestival
                               ? FontWeight.w900
@@ -517,9 +517,9 @@ class _EasyBengaliCalendarScreenState
       builder: (context, child) {
         final pulse = _festivalPulseController.value;
         final scale = isDurgaFestival
-            ? 0.98 + (0.06 * pulse)
+            ? 0.99 + (0.035 * pulse)
             : 1.0 + (0.02 * pulse);
-        final moveY = isDurgaFestival ? -2.5 + (5.0 * pulse) : 0.0;
+        final moveY = isDurgaFestival ? -1.2 + (2.4 * pulse) : 0.0;
         final rotate = isDurgaFestival ? -0.012 + (0.024 * pulse) : 0.0;
 
         return Transform.translate(
@@ -530,7 +530,7 @@ class _EasyBengaliCalendarScreenState
               scale: scale,
               child: Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(3),
                   boxShadow: [
                     BoxShadow(
                       color: Color.lerp(
