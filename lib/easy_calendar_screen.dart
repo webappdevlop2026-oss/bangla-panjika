@@ -71,6 +71,19 @@ class _EasyBengaliCalendarScreenState
     );
   }
 
+  bool _isDurgaFestival(List<CalendarEvent> events) {
+    return events.any(
+      (event) =>
+          event.label.contains('দুর্গা') ||
+          event.label.contains('মহাষষ্ঠী') ||
+          event.label.contains('মহাসপ্তমী') ||
+          event.label.contains('মহাষ্টমী') ||
+          event.label.contains('মহানবমী') ||
+          event.label.contains('বিজয়া দশমী') ||
+          event.label.contains('বিজয়া দশমী'),
+    );
+  }
+
   void _changeMonth(int direction) {
     final info = BengaliDateUtil.monthInfoFor(_anchor);
     setState(() {
@@ -137,8 +150,11 @@ class _EasyBengaliCalendarScreenState
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.48,
+                  childAspectRatio: 0.42,
+                  crossAxisSpacing: 3,
+                  mainAxisSpacing: 3,
                 ),
+                clipBehavior: Clip.none,
                 itemBuilder: (context, index) {
                   if (index < leading || index >= leading + totalDays) {
                     return Container(
@@ -318,22 +334,28 @@ class _EasyBengaliCalendarScreenState
         tithi.name.contains('একাদশী');
 
     final isMajorFestival = _isMajorFestival(events);
+    final isDurgaFestival = _isDurgaFestival(events);
 
     final dayTile = InkWell(
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
       child: Container(
         padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
         decoration: BoxDecoration(
-          color: isToday ? const Color(0xFFFFF3D9) : Colors.white,
-          border: Border(
-            right: const BorderSide(color: Color(0xFFE7E7E7)),
-            bottom: const BorderSide(color: Color(0xFFE7E7E7)),
-            top: isToday
-                ? const BorderSide(color: Color(0xFFE9B23B), width: 1.5)
-                : BorderSide.none,
-            left: isToday
-                ? const BorderSide(color: Color(0xFFE9B23B), width: 1.5)
-                : BorderSide.none,
+          color: isDurgaFestival
+              ? const Color(0xFFFFF3E0)
+              : isToday
+                  ? const Color(0xFFFFF3D9)
+                  : Colors.white,
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(
+            color: isDurgaFestival
+                ? const Color(0xFFE65100)
+                : isToday
+                    ? const Color(0xFFE9B23B)
+                    : isMajorFestival
+                        ? const Color(0xFFF59E0B)
+                        : const Color(0xFFE0E0E0),
+            width: (isDurgaFestival || isToday || isMajorFestival) ? 1.6 : 1,
           ),
         ),
         child: Column(
@@ -417,14 +439,18 @@ class _EasyBengaliCalendarScreenState
                     Flexible(
                       child: Text(
                         '${firstEvent.icon} ${firstEvent.label}',
-                        maxLines: 1,
+                        maxLines: isMajorFestival ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFFC62828),
-                          fontSize: 7.5,
+                        style: TextStyle(
+                          color: isDurgaFestival
+                              ? const Color(0xFFB71C1C)
+                              : const Color(0xFFC62828),
+                          fontSize: isMajorFestival ? 8.2 : 7.5,
                           height: 1.0,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: isMajorFestival
+                              ? FontWeight.w900
+                              : FontWeight.w800,
                         ),
                       ),
                     ),
@@ -444,25 +470,42 @@ class _EasyBengaliCalendarScreenState
       child: dayTile,
       builder: (context, child) {
         final pulse = _festivalPulseController.value;
-        return Transform.scale(
-          scale: 1.0 + (0.025 * pulse),
-          child: Container(
-            margin: const EdgeInsets.all(1),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(5),
-              boxShadow: [
-                BoxShadow(
-                  color: Color.lerp(
-                    const Color(0x33F59E0B),
-                    const Color(0x99FFB300),
-                    pulse,
-                  )!,
-                  blurRadius: 5 + (8 * pulse),
-                  spreadRadius: 0.5 + (1.5 * pulse),
+        final scale = isDurgaFestival
+            ? 0.98 + (0.06 * pulse)
+            : 1.0 + (0.02 * pulse);
+        final moveY = isDurgaFestival ? -2.5 + (5.0 * pulse) : 0.0;
+        final rotate = isDurgaFestival ? -0.012 + (0.024 * pulse) : 0.0;
+
+        return Transform.translate(
+          offset: Offset(0, moveY),
+          child: Transform.rotate(
+            angle: rotate,
+            child: Transform.scale(
+              scale: scale,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color.lerp(
+                        isDurgaFestival
+                            ? const Color(0x55FF6F00)
+                            : const Color(0x33F59E0B),
+                        isDurgaFestival
+                            ? const Color(0xCCFF9800)
+                            : const Color(0x88FFB300),
+                        pulse,
+                      )!,
+                      blurRadius:
+                          isDurgaFestival ? 8 + (10 * pulse) : 5 + (6 * pulse),
+                      spreadRadius:
+                          isDurgaFestival ? 1 + (2 * pulse) : 0.5 + pulse,
+                    ),
+                  ],
                 ),
-              ],
+                child: child,
+              ),
             ),
-            child: child,
           ),
         );
       },
