@@ -84,7 +84,7 @@ class _EasyBengaliCalendarScreenState
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.58,
+                  childAspectRatio: 0.48,
                 ),
                 itemBuilder: (context, index) {
                   if (index < leading || index >= leading + totalDays) {
@@ -329,50 +329,54 @@ class _EasyBengaliCalendarScreenState
                 ),
               ),
             ),
-            const SizedBox(height: 3),
-            if (showMoon)
-              Text(
-                tithi.name.contains('পূর্ণিমা')
-                    ? '🌕 ${tithi.name}'
-                    : tithi.name.contains('অমাবস্যা')
-                        ? '🌑 ${tithi.name}'
-                        : '◐ ${tithi.name}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF555555),
-                  fontSize: 8,
-                  fontWeight: FontWeight.w700,
-                ),
-              )
-            else
-              Text(
-                tithi.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF666666),
-                  fontSize: 8,
-                  fontWeight: FontWeight.w600,
-                ),
+            const SizedBox(height: 2),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  Flexible(
+                    child: Text(
+                      showMoon
+                          ? (tithi.name.contains('পূর্ণিমা')
+                              ? '🌕 ${tithi.name}'
+                              : tithi.name.contains('অমাবস্যা')
+                                  ? '🌑 ${tithi.name}'
+                                  : '◐ ${tithi.name}')
+                          : tithi.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: showMoon
+                            ? const Color(0xFF555555)
+                            : const Color(0xFF666666),
+                        fontSize: 8,
+                        height: 1.0,
+                        fontWeight:
+                            showMoon ? FontWeight.w700 : FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (firstEvent != null) ...[
+                    const SizedBox(height: 2),
+                    Flexible(
+                      child: Text(
+                        '${firstEvent.icon} ${firstEvent.label}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFC62828),
+                          fontSize: 7.5,
+                          height: 1.0,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            if (firstEvent != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                '${firstEvent.icon} ${firstEvent.label}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFFC62828),
-                  fontSize: 8,
-                  height: 1.05,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
+            ),
           ],
         ),
       ),
