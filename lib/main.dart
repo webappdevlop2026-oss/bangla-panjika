@@ -27,6 +27,8 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
+part 'easy_calendar_screen.dart';
+
 final RouteObserver<ModalRoute<void>> routeObserver =
     RouteObserver<ModalRoute<void>>();
 
@@ -33564,6 +33566,7 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
 
   static const _tabs = [
     'সম্পূর্ণ মাস',
+    'সহজ ক্যালেন্ডার',
     'বিশেষ দিন সমূহ',
     'বিবাহ',
     'অন্নপ্রাশন',
@@ -34228,7 +34231,18 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                         final t = _tabs[i];
                         final active = t == _tab;
                         return GestureDetector(
-                          onTap: () => setState(() => _tab = t),
+                          onTap: () {
+                            if (t == 'সহজ ক্যালেন্ডার') {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) =>
+                                      const EasyBengaliCalendarScreen(),
+                                ),
+                              );
+                              return;
+                            }
+                            setState(() => _tab = t);
+                          },
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 13),
                             alignment: Alignment.center,
