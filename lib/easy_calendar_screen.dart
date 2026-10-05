@@ -11,12 +11,65 @@ class EasyBengaliCalendarScreen extends StatefulWidget {
 }
 
 class _EasyBengaliCalendarScreenState
-    extends State<EasyBengaliCalendarScreen> {
+    extends State<EasyBengaliCalendarScreen>
+    with SingleTickerProviderStateMixin {
   DateTime _anchor = DateTime.now();
   String _mode = 'সম্পূর্ণ মাস';
 
   static const _modes = ['সম্পূর্ণ মাস', 'বিশেষ দিন', 'বিবাহ'];
   static const _weekdays = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
+
+  late final AnimationController _festivalPulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _festivalPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _festivalPulseController.dispose();
+    super.dispose();
+  }
+
+  bool _isMajorFestival(List<CalendarEvent> events) {
+    if (events.isEmpty) return false;
+    const keywords = <String>[
+      'দুর্গা',
+      'মহালয়া',
+      'মহালয়া',
+      'কালী',
+      'দীপাবলি',
+      'লক্ষ্মী',
+      'সরস্বতী',
+      'জগদ্ধাত্রী',
+      'বিশ্বকর্মা',
+      'গণেশ',
+      'শিবরাত্রি',
+      'জন্মাষ্টমী',
+      'রাম নবমী',
+      'দোল',
+      'হোলি',
+      'রথযাত্রা',
+      'রথ',
+      'ভাইফোঁটা',
+      'রাখী',
+      'নববর্ষ',
+      'পয়লা বৈশাখ',
+      'পয়লা বৈশাখ',
+      'ছট',
+      'পূজা',
+      'পুজো',
+      'উৎসব',
+    ];
+    return events.any(
+      (event) => keywords.any((keyword) => event.label.contains(keyword)),
+    );
+  }
 
   void _changeMonth(int direction) {
     final info = BengaliDateUtil.monthInfoFor(_anchor);
@@ -264,7 +317,9 @@ class _EasyBengaliCalendarScreenState
         tithi.name.contains('অমাবস্যা') ||
         tithi.name.contains('একাদশী');
 
-    return InkWell(
+    final isMajorFestival = _isMajorFestival(events);
+
+    final dayTile = InkWell(
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
       child: Container(
         padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
@@ -380,6 +435,37 @@ class _EasyBengaliCalendarScreenState
           ],
         ),
       ),
+    );
+
+    if (!isMajorFestival) return dayTile;
+
+    return AnimatedBuilder(
+      animation: _festivalPulseController,
+      child: dayTile,
+      builder: (context, child) {
+        final pulse = _festivalPulseController.value;
+        return Transform.scale(
+          scale: 1.0 + (0.025 * pulse),
+          child: Container(
+            margin: const EdgeInsets.all(1),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(5),
+              boxShadow: [
+                BoxShadow(
+                  color: Color.lerp(
+                    const Color(0x33F59E0B),
+                    const Color(0x99FFB300),
+                    pulse,
+                  )!,
+                  blurRadius: 5 + (8 * pulse),
+                  spreadRadius: 0.5 + (1.5 * pulse),
+                ),
+              ],
+            ),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
