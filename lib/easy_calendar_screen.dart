@@ -154,7 +154,7 @@ class _EasyBengaliCalendarScreenState
                   crossAxisSpacing: 1,
                   mainAxisSpacing: 1,
                 ),
-                clipBehavior: Clip.none,
+                clipBehavior: Clip.hardEdge,
                 itemBuilder: (context, index) {
                   if (index < leading || index >= leading + totalDays) {
                     return Container(
@@ -374,58 +374,65 @@ class _EasyBengaliCalendarScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${greg.day}',
-                  style: const TextStyle(
-                    color: Color(0xFF777777),
-                    fontSize: 9.8,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (isToday)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 3,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1565C0),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'আজ',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 9.0,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  )
-                else if (isMajorFestival)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 3,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDurgaFestival
-                          ? const Color(0xFFE65100)
-                          : const Color(0xFFF59E0B),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
+            SizedBox(
+              height: 18,
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 2,
                     child: Text(
-                      isDurgaFestival ? 'পূজা' : 'উৎসব',
+                      '${greg.day}',
+                      maxLines: 1,
                       style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8.2,
-                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF777777),
+                        fontSize: 9.8,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-              ],
+                  if (isToday || isMajorFestival)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 30),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 3,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isToday
+                                ? const Color(0xFF1565C0)
+                                : isDurgaFestival
+                                    ? const Color(0xFFE65100)
+                                    : const Color(0xFFF59E0B),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              isToday
+                                  ? 'আজ'
+                                  : isDurgaFestival
+                                      ? 'পূজা'
+                                      : 'উৎসব',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8.6,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 1),
             SizedBox(
@@ -520,18 +527,15 @@ class _EasyBengaliCalendarScreenState
       builder: (context, child) {
         final pulse = _festivalPulseController.value;
         final scale = isDurgaFestival
-            ? 0.99 + (0.035 * pulse)
-            : 1.0 + (0.02 * pulse);
-        final moveY = isDurgaFestival ? -1.2 + (2.4 * pulse) : 0.0;
-        final rotate = isDurgaFestival ? -0.012 + (0.024 * pulse) : 0.0;
+            ? 0.985 + (0.015 * pulse)
+            : 0.99 + (0.01 * pulse);
+        final moveY = isDurgaFestival ? -1.5 + (3.0 * pulse) : 0.0;
 
         return Transform.translate(
           offset: Offset(0, moveY),
-          child: Transform.rotate(
-            angle: rotate,
-            child: Transform.scale(
-              scale: scale,
-              child: Container(
+          child: Transform.scale(
+            scale: scale,
+            child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(1),
                   boxShadow: [
@@ -555,8 +559,7 @@ class _EasyBengaliCalendarScreenState
                 child: child,
               ),
             ),
-          ),
-        );
+          );
       },
     );
   }
