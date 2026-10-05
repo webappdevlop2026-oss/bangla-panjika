@@ -5,89 +5,107 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $text = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
 $original = $text
 
-# 1) Link the new screen as a Dart part, preserving the existing main.dart text.
+# Keep the separate Easy Calendar screen linked to main.dart.
 if ($text -notmatch "part 'easy_calendar_screen\.dart';") {
   $importAnchor = "import 'package:url_launcher/url_launcher.dart';"
   $importIndex = $text.IndexOf($importAnchor)
-  if ($importIndex -lt 0) {
-    throw 'Could not find url_launcher import anchor in main.dart.'
-  }
+  if ($importIndex -lt 0) { throw 'Could not find import anchor.' }
   $insertAt = $importIndex + $importAnchor.Length
   $text = $text.Insert($insertAt, "`n`npart 'easy_calendar_screen.dart';")
 }
 
-# 2) Add the Easy Calendar as the second visible option in the LIVE calendar tab bar.
 $classAnchor = 'class _BengaliCalendarScreenState extends State<BengaliCalendarScreen>'
 $classStart = $text.IndexOf($classAnchor)
-if ($classStart -lt 0) {
-  throw 'Could not find live Bengali calendar state class.'
-}
+if ($classStart -lt 0) { throw 'Could not find live Bengali calendar state class.' }
 
+# Remove Easy Calendar from the horizontal filter/tab list.
 $tabsStart = $text.IndexOf('static const _tabs = [', $classStart)
-if ($tabsStart -lt 0) {
-  throw 'Could not find live calendar tabs.'
-}
+if ($tabsStart -lt 0) { throw 'Could not find live calendar tabs.' }
 $tabsEnd = $text.IndexOf('];', $tabsStart)
-if ($tabsEnd -lt 0) {
-  throw 'Could not find end of live calendar tabs.'
-}
+if ($tabsEnd -lt 0) { throw 'Could not find end of live calendar tabs.' }
 $tabsLength = ($tabsEnd + 2) - $tabsStart
 $tabsBlock = $text.Substring($tabsStart, $tabsLength)
+$tabsBlock = $tabsBlock.Replace("    'সহজ ক্যালেন্ডার',`r`n", '')
+$tabsBlock = $tabsBlock.Replace("    'সহজ ক্যালেন্ডার',`n", '')
+$text = $text.Remove($tabsStart, $tabsLength).Insert($tabsStart, $tabsBlock)
 
-if ($tabsBlock -notmatch 'সহজ ক্যালেন্ডার') {
-  $oldFirstTab = "'সম্পূর্ণ মাস',"
-  $firstTabIndex = $tabsBlock.IndexOf($oldFirstTab)
-  if ($firstTabIndex -lt 0) {
-    throw 'Could not find সম্পূর্ণ মাস inside live calendar tabs.'
-  }
-  $afterFirstTab = $firstTabIndex + $oldFirstTab.Length
-  $tabsBlock = $tabsBlock.Insert($afterFirstTab, "`n    'সহজ ক্যালেন্ডার',")
-  $text = $text.Remove($tabsStart, $tabsLength).Insert($tabsStart, $tabsBlock)
-}
-
-# 3) Make that option open the elderly-friendly screen, while every old tab keeps working unchanged.
+# Restore normal tap behavior for the remaining filter tabs.
 $classStart = $text.IndexOf($classAnchor)
-$tapAnchor = 'onTap: () => setState(() => _tab = t),'
-$tapIndex = $text.IndexOf($tapAnchor, $classStart)
+$handlerPattern = "onTap:\s*\(\)\s*\{\s*if \(t == 'সহজ ক্যালেন্ডার'\)\s*\{.*?setState\(\(\) => _tab = t\);\s*\},"
+$handlerRegex = [regex]::new($handlerPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+$afterClass = $text.Substring($classStart)
+if ($handlerRegex.IsMatch($afterClass)) {
+  $afterClass = $handlerRegex.Replace($afterClass, 'onTap: () => setState(() => _tab = t),', 1)
+  $text = $text.Substring(0, $classStart) + $afterClass
+}
 
-if ($text.IndexOf('const EasyBengaliCalendarScreen()', $classStart) -lt 0) {
-  if ($tapIndex -lt 0) {
-    throw 'Could not find live calendar tab onTap handler.'
-  }
+# Add ONE large standalone button immediately above the filter tabs.
+$classStart = $text.IndexOf($classAnchor)
+$tabComment = '// ---- ট্যাব বার (ফিল্টার) ----'
+$commentIndex = $text.IndexOf($tabComment, $classStart)
+if ($commentIndex -lt 0) { throw 'Could not find filter-tab insertion point.' }
 
-  $replacement = @"
-onTap: () {
-                            if (t == 'সহজ ক্যালেন্ডার') {
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      const EasyBengaliCalendarScreen(),
-                                ),
-                              );
-                              return;
-                            }
-                            setState(() => _tab = t);
-                          },
+$standaloneMarker = "tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার'"
+if ($text.IndexOf($standaloneMarker, $classStart) -lt 0) {
+  $button = @"
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52 * _tsFactor(context),
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const EasyBengaliCalendarScreen(),
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF1765A6),
+                        foregroundColor: Colors.white,
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.calendar_view_month_rounded,
+                        size: 22,
+                      ),
+                      label: const Text(
+                        'সহজ ক্যালেন্ডার',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  
 "@
-
-  $text = $text.Remove($tapIndex, $tapAnchor.Length).Insert($tapIndex, $replacement.TrimEnd("`r", "`n"))
+  $text = $text.Insert($commentIndex, $button)
 }
 
-if ($text -eq $original) {
-  Write-Host 'Easy Calendar patch is already present; no changes needed.'
-  exit 0
+# Safety checks: separate button exists, but Easy Calendar is no longer in _tabs.
+$classStart = $text.IndexOf($classAnchor)
+$tabsStart = $text.IndexOf('static const _tabs = [', $classStart)
+$tabsEnd = $text.IndexOf('];', $tabsStart)
+$tabsBlock = $text.Substring($tabsStart, ($tabsEnd + 2) - $tabsStart)
+if ($tabsBlock -match 'সহজ ক্যালেন্ডার') {
+  throw 'Safety check failed: Easy Calendar is still inside filter tabs.'
 }
-
-# Final safety checks before writing.
-if ($text -notmatch "part 'easy_calendar_screen\.dart';") {
-  throw 'Safety check failed: Dart part directive missing.'
+if ($text.IndexOf($standaloneMarker, $classStart) -lt 0) {
+  throw 'Safety check failed: standalone Easy Calendar button missing.'
 }
-if ($text -notmatch 'সহজ ক্যালেন্ডার') {
-  throw 'Safety check failed: Easy Calendar label missing.'
-}
-if ($text -notmatch 'EasyBengaliCalendarScreen') {
+if ($text.IndexOf('const EasyBengaliCalendarScreen()', $classStart) -lt 0) {
   throw 'Safety check failed: Easy Calendar route missing.'
 }
 
+if ($text -eq $original) {
+  Write-Host 'Standalone Easy Calendar button is already present.'
+  exit 0
+}
+
 [System.IO.File]::WriteAllText($path, $text, $utf8)
-Write-Host 'Easy Calendar entry patch applied safely to lib/main.dart.'
+Write-Host 'Easy Calendar moved to one standalone button successfully.'
