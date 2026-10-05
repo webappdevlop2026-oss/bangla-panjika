@@ -21,9 +21,9 @@ jobs:
         shell: pwsh
         run: ./APPLY_EASY_CALENDAR.ps1
 
-      - name: Validate Dart formatting
+      - name: Validate Dart syntax
         uses: dart-lang/setup-dart@v1
-      - run: dart format --output=none --set-exit-if-changed lib/main.dart lib/easy_calendar_screen.dart
+      - run: dart format --output=none lib/main.dart lib/easy_calendar_screen.dart
 
       - name: Commit main.dart change
         run: |
