@@ -381,7 +381,7 @@ class _EasyBengaliCalendarScreenState
                   '${greg.day}',
                   style: const TextStyle(
                     color: Color(0xFF777777),
-                    fontSize: 8.8,
+                    fontSize: 9.8,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -399,7 +399,7 @@ class _EasyBengaliCalendarScreenState
                       'আজ',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 8.5,
+                        fontSize: 9.0,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -420,7 +420,7 @@ class _EasyBengaliCalendarScreenState
                       isDurgaFestival ? 'পূজা' : 'উৎসব',
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 7.5,
+                        fontSize: 8.2,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -459,59 +459,50 @@ class _EasyBengaliCalendarScreenState
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    SizedBox(
-                      height: 12,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          showMoon
-                              ? (tithi.name.contains('পূর্ণিমা')
-                                  ? '🌕 ${tithi.name}'
-                                  : tithi.name.contains('অমাবস্যা')
-                                      ? '🌑 ${tithi.name}'
-                                      : '◐ ${tithi.name}')
-                              : tithi.name,
-                          maxLines: 1,
-                          softWrap: false,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: showMoon
-                                ? const Color(0xFF555555)
-                                : const Color(0xFF666666),
-                            fontSize: 8.8,
-                            height: 1.0,
-                            fontWeight:
-                                showMoon ? FontWeight.w700 : FontWeight.w600,
-                          ),
-                        ),
+                    Text(
+                      showMoon
+                          ? (tithi.name.contains('পূর্ণিমা')
+                              ? '🌕 ${tithi.name}'
+                              : tithi.name.contains('অমাবস্যা')
+                                  ? '🌑 ${tithi.name}'
+                                  : '◐ ${tithi.name}')
+                          : tithi.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: showMoon
+                            ? const Color(0xFF444444)
+                            : const Color(0xFF555555),
+                        fontSize: 9.6,
+                        height: 1.05,
+                        fontWeight:
+                            showMoon ? FontWeight.w800 : FontWeight.w700,
                       ),
                     ),
-                    if (firstEvent != null)
+                    if (firstEvent != null) ...[
+                      const SizedBox(height: 2),
                       Expanded(
                         child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 54),
-                              child: Text(
-                                '${firstEvent.icon} ${firstEvent.label}',
-                                maxLines: 2,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: isDurgaFestival
-                                      ? const Color(0xFFB71C1C)
-                                      : const Color(0xFFC62828),
-                                  fontSize: isMajorFestival ? 8.7 : 8.0,
-                                  height: 1.0,
-                                  fontWeight: isMajorFestival
-                                      ? FontWeight.w900
-                                      : FontWeight.w800,
-                                ),
-                              ),
+                          child: Text(
+                            '${firstEvent.icon} ${firstEvent.label}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: isDurgaFestival
+                                  ? const Color(0xFFB71C1C)
+                                  : const Color(0xFFC62828),
+                              fontSize: isMajorFestival ? 9.6 : 8.8,
+                              height: 1.05,
+                              fontWeight: isMajorFestival
+                                  ? FontWeight.w900
+                                  : FontWeight.w800,
                             ),
                           ),
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
