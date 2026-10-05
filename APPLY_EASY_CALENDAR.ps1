@@ -29,7 +29,7 @@ $tabsBlock = $tabsBlock.Replace("    'সহজ ক্যালেন্ডা�
 $tabsBlock = $tabsBlock.Replace("    'সহজ ক্যালেন্ডার',`n", '')
 $text = $text.Remove($tabsStart, $tabsLength).Insert($tabsStart, $tabsBlock)
 
-# Restore normal tap behavior for the remaining filter tabs.
+# Restore normal tap behavior for the remaining filter tabs if an older patch is present.
 $classStart = $text.IndexOf($classAnchor)
 $handlerPattern = "onTap:\s*\(\)\s*\{\s*if \(t == 'সহজ ক্যালেন্ডার'\)\s*\{.*?setState\(\(\) => _tab = t\);\s*\},"
 $handlerRegex = [regex]::new($handlerPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
@@ -39,15 +39,20 @@ if ($handlerRegex.IsMatch($afterClass)) {
   $text = $text.Substring(0, $classStart) + $afterClass
 }
 
-# Add ONE large standalone button immediately above the filter tabs.
+# Repair the previous build-breaking FilledButton.icon tooltip argument.
+$text = $text.Replace("                      tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার',`r`n", "                      // EASY_CALENDAR_STANDALONE_BUTTON`r`n")
+$text = $text.Replace("                      tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার',`n", "                      // EASY_CALENDAR_STANDALONE_BUTTON`n")
+
+# Add ONE large standalone button immediately above the filter tabs if it is missing.
 $classStart = $text.IndexOf($classAnchor)
 $tabComment = '// ---- ট্যাব বার (ফিল্টার) ----'
 $commentIndex = $text.IndexOf($tabComment, $classStart)
 if ($commentIndex -lt 0) { throw 'Could not find filter-tab insertion point.' }
 
-$standaloneMarker = "tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার'"
+$standaloneMarker = '// EASY_CALENDAR_STANDALONE_BUTTON'
 if ($text.IndexOf($standaloneMarker, $classStart) -lt 0) {
   $button = @"
+                  // EASY_CALENDAR_STANDALONE_BUTTON
                   SizedBox(
                     width: double.infinity,
                     height: 52 * _tsFactor(context),
@@ -78,7 +83,6 @@ if ($text.IndexOf($standaloneMarker, $classStart) -lt 0) {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      tooltip: 'বয়স্কদের জন্য সহজ ক্যালেন্ডার',
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -87,7 +91,7 @@ if ($text.IndexOf($standaloneMarker, $classStart) -lt 0) {
   $text = $text.Insert($commentIndex, $button)
 }
 
-# Safety checks: separate button exists, but Easy Calendar is no longer in _tabs.
+# Safety checks.
 $classStart = $text.IndexOf($classAnchor)
 $tabsStart = $text.IndexOf('static const _tabs = [', $classStart)
 $tabsEnd = $text.IndexOf('];', $tabsStart)
@@ -101,11 +105,14 @@ if ($text.IndexOf($standaloneMarker, $classStart) -lt 0) {
 if ($text.IndexOf('const EasyBengaliCalendarScreen()', $classStart) -lt 0) {
   throw 'Safety check failed: Easy Calendar route missing.'
 }
+if ($text -match "tooltip:\s*'বয়স্কদের জন্য সহজ ক্যালেন্ডার'") {
+  throw 'Safety check failed: invalid FilledButton.icon tooltip still present.'
+}
 
 if ($text -eq $original) {
-  Write-Host 'Standalone Easy Calendar button is already present.'
+  Write-Host 'Standalone Easy Calendar button is already build-safe.'
   exit 0
 }
 
 [System.IO.File]::WriteAllText($path, $text, $utf8)
-Write-Host 'Easy Calendar moved to one standalone button successfully.'
+Write-Host 'Standalone Easy Calendar build fix applied successfully.'
