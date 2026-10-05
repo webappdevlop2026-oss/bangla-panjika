@@ -341,22 +341,35 @@ class _EasyBengaliCalendarScreenState
       child: Container(
         padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
         decoration: BoxDecoration(
-          color: isDurgaFestival
-              ? const Color(0xFFFFF3E0)
-              : isToday
-                  ? const Color(0xFFFFF3D9)
+          color: isToday
+              ? const Color(0xFFEAF4FF)
+              : isDurgaFestival
+                  ? const Color(0xFFFFF3E0)
                   : Colors.white,
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: isDurgaFestival
-                ? const Color(0xFFE65100)
-                : isToday
-                    ? const Color(0xFFE9B23B)
+            color: isToday
+                ? const Color(0xFF1565C0)
+                : isDurgaFestival
+                    ? const Color(0xFFE65100)
                     : isMajorFestival
                         ? const Color(0xFFF59E0B)
                         : const Color(0xFFE0E0E0),
-            width: (isDurgaFestival || isToday || isMajorFestival) ? 1.6 : 1,
+            width: isToday
+                ? 2.6
+                : (isDurgaFestival || isMajorFestival)
+                    ? 1.7
+                    : 1,
           ),
+          boxShadow: isToday
+              ? const [
+                  BoxShadow(
+                    color: Color(0x551565C0),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : const [],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -373,12 +386,43 @@ class _EasyBengaliCalendarScreenState
                   ),
                 ),
                 if (isToday)
-                  const Text(
-                    'আজ',
-                    style: TextStyle(
-                      color: Color(0xFFC07A00),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w900,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1565C0),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'আজ',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  )
+                else if (isMajorFestival)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 3,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDurgaFestival
+                          ? const Color(0xFFE65100)
+                          : const Color(0xFFF59E0B),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(
+                      isDurgaFestival ? 'পূজা' : 'উৎসব',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 7,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
               ],
@@ -395,10 +439,12 @@ class _EasyBengaliCalendarScreenState
                     softWrap: false,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: isSunday
-                          ? const Color(0xFFC62828)
-                          : const Color(0xFF194F90),
-                      fontSize: 27,
+                      color: isToday
+                          ? const Color(0xFF0D47A1)
+                          : isSunday
+                              ? const Color(0xFFC62828)
+                              : const Color(0xFF194F90),
+                      fontSize: isToday ? 30 : 27,
                       height: 1.0,
                       fontWeight: FontWeight.w900,
                     ),
