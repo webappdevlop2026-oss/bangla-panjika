@@ -6,8 +6,32 @@ class _UpcomingImportantDay {
   const _UpcomingImportantDay(this.date, this.event);
 }
 
-class UpcomingImportantDaysSection extends StatelessWidget {
+class UpcomingImportantDaysSection extends StatefulWidget {
   const UpcomingImportantDaysSection({super.key});
+
+  @override
+  State<UpcomingImportantDaysSection> createState() =>
+      _UpcomingImportantDaysSectionState();
+}
+
+class _UpcomingImportantDaysSectionState
+    extends State<UpcomingImportantDaysSection> {
+  final AudioPlayer _dhakPlayer = AudioPlayer();
+
+  @override
+  void dispose() {
+    _dhakPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _playDhak() async {
+    try {
+      await _dhakPlayer.stop();
+      await _dhakPlayer.play(AssetSource('audio/dhak_click.ogg'));
+    } catch (_) {
+      // Sound must never block the card action.
+    }
+  }
 
   static const _majorKeywords = <String>[
     'দুর্গা',
@@ -223,7 +247,19 @@ class UpcomingImportantDaysSection extends StatelessWidget {
                 final accent = _accentFor(label);
                 return SizedBox(
                   width: cardWidth,
-                  child: Container(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () async {
+                      await _playDhak();
+                      if (!context.mounted) return;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const BengaliCalendarScreen(),
+                        ),
+                      );
+                    },
+                    child: Container(
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -239,35 +275,60 @@ class UpcomingImportantDaysSection extends StatelessWidget {
                     ),
                     child: Column(
                       children: [
-                        Container(
+                        SizedBox(
                           height: wide ? 104 : 82,
                           width: double.infinity,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                accent.withValues(alpha: 0.94),
-                                const Color(0xFFFFA000),
-                              ],
-                            ),
-                          ),
                           child: Stack(
+                            fit: StackFit.expand,
                             children: [
-                              Positioned(
-                                right: -12,
-                                top: -12,
-                                child: Icon(
-                                  _iconFor(label),
-                                  size: wide ? 100 : 82,
-                                  color: Colors.white.withValues(alpha: 0.20),
+                              Image.asset(
+                                'assets/images/durga_puja_home.webp',
+                                fit: BoxFit.cover,
+                                alignment: Alignment.center,
+                              ),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      accent.withValues(alpha: 0.30),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              Center(
-                                child: Icon(
-                                  _iconFor(label),
-                                  size: wide ? 58 : 48,
-                                  color: Colors.white,
+                              Positioned(
+                                right: 8,
+                                top: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.42),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.volume_up_rounded,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        'ঢাক',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
@@ -337,7 +398,8 @@ class UpcomingImportantDaysSection extends StatelessWidget {
                       ],
                     ),
                   ),
-                );
+                ),
+              );
               },
             ),
           ),
