@@ -1065,12 +1065,23 @@ class AdService {
   static const String _googleTestInterstitial =
       'ca-app-pub-3940256099942544/1033173712';
 
-  static const String bannerAdUnitId = _googleTestBanner;
-  static const String interstitialAdUnitId = _googleTestInterstitial;
+  // Client-এর approved ShriPanchang AdMob ad units.
+  // Debug/profile run-এ কখনো real ad request হবে না; release AAB-তেই
+  // production ID ব্যবহার হবে। এতে development-এর সময় invalid traffic
+  // ঝুঁকি থাকে না।
+  static const String _prodBanner =
+      'ca-app-pub-1633139980546533/6253571592';
+  static const String _prodInterstitial =
+      'ca-app-pub-1633139980546533/4286077327';
 
-  /// আসল (টেস্ট নয়) AdMob ID বসানো হয়েছে কিনা
+  static String get bannerAdUnitId =>
+      kReleaseMode ? _prodBanner : _googleTestBanner;
+  static String get interstitialAdUnitId =>
+      kReleaseMode ? _prodInterstitial : _googleTestInterstitial;
+
+  /// Production ad IDs configure করা আছে কিনা.
   static bool get realAdsConfigured =>
-      bannerAdUnitId.isNotEmpty && bannerAdUnitId != _googleTestBanner;
+      _prodBanner.isNotEmpty && _prodInterstitial.isNotEmpty;
 
   Future<void> init() async {
     if (_initialized || kIsWeb) return;
