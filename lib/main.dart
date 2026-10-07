@@ -4603,6 +4603,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
         const _HistoryBanner(),
         const SizedBox(height: 14),
         _TickerBar(),
+        const SizedBox(height: 14),
+        const HomeEkadashiCard(),
         const SizedBox(height: 18),
         const _SectionTitle('পরবর্তী উৎসব ও প্রস্তুতি'),
         const SizedBox(height: 10),
@@ -4752,6 +4754,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
               const _HistoryBanner(),
               const SizedBox(height: 12),
               _TickerBar(),
+              const SizedBox(height: 14),
+              const HomeEkadashiCard(),
               const SizedBox(height: 18),
               // আসন্ন উৎসব — পঞ্জিকা খোলার সবচেয়ে বড় কারণই "সামনে কী
               // উৎসব", তাই একেবারে উপরে রাখা হলো। আগে নিচে পড়ে থাকত।
