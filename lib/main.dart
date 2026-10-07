@@ -1048,6 +1048,10 @@ class AdService {
   AdService._();
   static final AdService instance = AdService._();
   bool _initialized = false;
+  InterstitialAd? _interstitial;
+  bool _loadingInterstitial = false;
+  int _featureOpenCount = 0;
+  DateTime? _lastInterstitialShown;
 
   // এগুলো Google-এর অফিসিয়াল টেস্ট Ad Unit ID — কোনো আয় হয় না।
   //
@@ -1088,9 +1092,68 @@ class AdService {
     try {
       await MobileAds.instance.initialize();
       _initialized = true;
+      _loadInterstitial();
     } catch (_) {
       // বিজ্ঞাপন SDK শুরু না হলেও বাকি অ্যাপ স্বাভাবিক চলবে
     }
+  }
+
+  Future<void> _loadInterstitial() async {
+    if (!shouldShowAds || _loadingInterstitial || _interstitial != null) return;
+    _loadingInterstitial = true;
+    await InterstitialAd.load(
+      adUnitId: interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _loadingInterstitial = false;
+          _interstitial = ad;
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _interstitial = null;
+              _loadInterstitial();
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              ad.dispose();
+              _interstitial = null;
+              _loadInterstitial();
+            },
+          );
+        },
+        onAdFailedToLoad: (_) {
+          _loadingInterstitial = false;
+          _interstitial = null;
+        },
+      ),
+    );
+  }
+
+  /// Full-screen ad খুব ঘনঘন নয় — প্রতি ৫টি feature open-এর পর সর্বোচ্চ
+  /// একবার, এবং দুইটি interstitial-এর মাঝে অন্তত ২ মিনিট gap।
+  void maybeShowInterstitial() {
+    if (!shouldShowAds) return;
+    _featureOpenCount++;
+    if (_featureOpenCount % 5 != 0) {
+      if (_interstitial == null) _loadInterstitial();
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_lastInterstitialShown != null &&
+        now.difference(_lastInterstitialShown!) < const Duration(minutes: 2)) {
+      return;
+    }
+
+    final ad = _interstitial;
+    if (ad == null) {
+      _loadInterstitial();
+      return;
+    }
+
+    _interstitial = null;
+    _lastInterstitialShown = now;
+    ad.show();
   }
 
   /// প্রিমিয়াম ইউজার, ওয়েব, বা আসল AdMob ID না বসানো থাকলে বিজ্ঞাপন
@@ -4087,6 +4150,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
   }
 
   void _handleOpen(BuildContext context, String title) {
+    AdService.instance.maybeShowInterstitial();
     if (title == 'বাংলা ক্যালেন্ডার') {
       Navigator.push(
         context,
