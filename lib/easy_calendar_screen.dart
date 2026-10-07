@@ -672,3 +672,293 @@ class _EasyBengaliCalendarScreenState
     );
   }
 }
+
+// =====================================================================
+// Home Screen — আলাদা একাদশী field
+// =====================================================================
+
+class HomeEkadashiCard extends StatefulWidget {
+  const HomeEkadashiCard({super.key});
+
+  @override
+  State<HomeEkadashiCard> createState() => _HomeEkadashiCardState();
+}
+
+class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    LocationService.instance.addListener(_onLocationChanged);
+    unawaited(LocationService.instance.refresh());
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    LocationService.instance.removeListener(_onLocationChanged);
+    super.dispose();
+  }
+
+  void _onLocationChanged() {
+    if (mounted) setState(() {});
+  }
+
+  (DateTime day, String paksha, DateTime start, DateTime end)? _next() {
+    final base = DateTime(_now.year, _now.month, _now.day);
+
+    for (int i = 0; i <= 45; i++) {
+      final day = base.add(Duration(days: i));
+      final sunrise = PanchangCalculator.sunTimes(
+        day,
+        lat: AppLocation.lat,
+        lon: AppLocation.lon,
+      ).sunrise;
+
+      final atSunrise = PanchangCalculator.tithiFor(sunrise);
+      final hasEvent = BengaliCalendarData.eventsFor(
+        day,
+      ).any((e) => e.category == 'ekadashi');
+
+      if (atSunrise.name != 'একাদশী' && !hasEvent) continue;
+
+      for (int h = 0; h < 24; h++) {
+        final probe = DateTime(day.year, day.month, day.day, h, 30);
+        final t = PanchangCalculator.tithiFor(probe);
+        if (t.name != 'একাদশী') continue;
+
+        final timing = PanchangCalculator.tithiTiming(probe);
+        if (!timing.$2.isAfter(_now)) continue;
+        return (day, t.paksha, timing.$1, timing.$2);
+      }
+    }
+    return null;
+  }
+
+  String _duration(Duration d) {
+    if (d.isNegative) d = Duration.zero;
+    final total = d.inSeconds;
+    final days = total ~/ 86400;
+    final hours = (total % 86400) ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final seconds = total % 60;
+
+    if (days > 0) {
+      return '${bnNum(days)} দিন ${bnNum(hours)} ঘ ${bnNum(minutes)} মি';
+    }
+    if (hours > 0) {
+      return '${bnNum(hours)} ঘ ${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+    }
+    return '${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = _next();
+    if (data == null) return const SizedBox.shrink();
+
+    final day = data.$1;
+    final paksha = data.$2;
+    final start = data.$3;
+    final end = data.$4;
+    final active = !_now.isBefore(start) && _now.isBefore(end);
+
+    final countdown = _now.isBefore(start)
+        ? 'শুরু হতে ${_duration(start.difference(_now))}'
+        : 'একাদশী চলছে • শেষ হতে ${_duration(end.difference(_now))}';
+
+    final loc = LocationService.instance.hasGps
+        ? 'GPS Live'
+        : '${AppLocation.district} • জেলা';
+
+    CalendarEvent? event;
+    for (final e in BengaliCalendarData.eventsFor(day)) {
+      if (e.category == 'ekadashi') {
+        event = e;
+        break;
+      }
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PanchangOccasionDetailScreen(
+            date: day,
+            event: event,
+          ),
+        ),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF3C176A),
+              Color(0xFF741B63),
+              Color(0xFF9A5B16),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0x66FFD98A)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('🙏', style: TextStyle(fontSize: 28)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'আগামী একাদশী',
+                        style: TextStyle(
+                          color: Color(0xFFFFE8A6),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        '$paksha পক্ষের একাদশী',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  active ? 'LIVE' : 'NEXT',
+                  style: TextStyle(
+                    color: active
+                        ? const Color(0xFF8CFFC1)
+                        : const Color(0xFFFFE8A6),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '${PanchangCalculator.weekdayName(day)} • '
+              '${bnNum(day.day)} ${gregMonthBn(day.month)} ${bnNum(day.year)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _HomeEkadashiTimeBox(
+                    label: 'লাগবে',
+                    value:
+                        '${bnNum(start.day)} ${gregMonthBn(start.month)} • ${bnTime12(start)}',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _HomeEkadashiTimeBox(
+                    label: 'ছাড়বে',
+                    value:
+                        '${bnNum(end.day)} ${gregMonthBn(end.month)} • ${bnTime12(end)}',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0x22FFFFFF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '⏳ $countdown',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '📍 $loc • live timing',
+              style: const TextStyle(
+                color: Color(0xFFECE5F5),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeEkadashiTimeBox extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _HomeEkadashiTimeBox({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0x1FFFFFFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x33FFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFFFE8A6),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
