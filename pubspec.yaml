@@ -34,7 +34,6 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  audioplayers: ^6.1.0
 
   # à¦¡à§‡à¦Ÿà¦¾ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ â€” à¦°à¦¿à¦®à¦¾à¦‡à¦¨à§à¦¡à¦¾à¦°, à¦¨à§‹à¦Ÿà¦¸, à¦¸à§‡à¦Ÿà¦¿à¦‚à¦¸, à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦², à¦œà§‡à¦²à¦¾
   shared_preferences: ^2.3.3
@@ -115,8 +114,6 @@ flutter:
   assets:
     - assets/fonts/NotoSansBengali-Regular.ttf
     - assets/fonts/NotoSansBengali-Bold.ttf
-    - assets/images/durga_puja_home.webp
-    - assets/audio/dhak_click.ogg
 
   # à¦à¦•à¦‡ à¦«à¦¨à§à¦Ÿà¦Ÿà¦¾ à¦à¦–à¦¨ à¦ªà§à¦°à§‹ à¦…à§à¦¯à¦¾à¦ªà§‡à¦° UI-à¦¤à§‡à¦“ à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦¹à¦šà§à¦›à§‡ (readability à¦†à¦ªà¦¡à§‡à¦Ÿ) â€”
   # à¦«à§‹à¦¨à§‡à¦° à¦¬à§à¦°à§à¦¯à¦¾à¦¨à§à¦¡/à¦®à¦¡à§‡à¦²à¦­à§‡à¦¦à§‡ à¦¡à¦¿à¦«à¦²à§à¦Ÿ à¦¬à¦¾à¦‚à¦²à¦¾ à¦«à¦¨à§à¦Ÿ à¦†à¦²à¦¾à¦¦à¦¾ à¦†à¦²à¦¾à¦¦à¦¾ à¦¦à§‡à¦–à¦¾à¦¯à¦¼ (à¦•à§‹à¦¥à¦¾à¦“

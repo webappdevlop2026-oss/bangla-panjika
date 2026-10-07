@@ -5,7 +5,6 @@ import 'dart:typed_data' show Uint8List;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart'
@@ -29,7 +28,6 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
 part 'easy_calendar_screen.dart';
-part 'home_upcoming_days_section.dart';
 
 final RouteObserver<ModalRoute<void>> routeObserver =
     RouteObserver<ModalRoute<void>>();
@@ -4605,8 +4603,6 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
         const _HistoryBanner(),
         const SizedBox(height: 14),
         _TickerBar(),
-        const SizedBox(height: 16),
-        const UpcomingImportantDaysSection(),
         const SizedBox(height: 18),
         const _SectionTitle('পরবর্তী উৎসব ও প্রস্তুতি'),
         const SizedBox(height: 10),
@@ -4756,8 +4752,6 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
               const _HistoryBanner(),
               const SizedBox(height: 12),
               _TickerBar(),
-              const SizedBox(height: 16),
-              const UpcomingImportantDaysSection(),
               const SizedBox(height: 18),
               // আসন্ন উৎসব — পঞ্জিকা খোলার সবচেয়ে বড় কারণই "সামনে কী
               // উৎসব", তাই একেবারে উপরে রাখা হলো। আগে নিচে পড়ে থাকত।
