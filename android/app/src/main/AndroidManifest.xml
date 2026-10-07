@@ -48,7 +48,7 @@
              (README.md এ বিস্তারিত ধাপ আছে) -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"/>
+            android:value="ca-app-pub-1633139980546533~1853740708"/>
 
         <!-- নির্ধারিত সময়ে রিমাইন্ডার বাজানোর জন্য (flutter_local_notifications) -->
         <receiver
