@@ -16,6 +16,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:in_app_review/in_app_review.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -29,10 +30,165 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
 part 'easy_calendar_screen.dart';
-part 'home_upcoming_days_section.dart';
 
 final RouteObserver<ModalRoute<void>> routeObserver =
     RouteObserver<ModalRoute<void>>();
+
+
+/// Google Play-এ নতুন version পাওয়া গেলে পুরনো app ব্যবহার করতে না দিয়ে
+/// Play-এর Immediate Update flow চালায়। Debug/local build-এ এটি ইচ্ছাকৃতভাবে
+/// বন্ধ থাকে, যাতে development-এর সময় Play Store না থাকলেও app চালানো যায়।
+class _MandatoryPlayUpdateGate extends StatefulWidget {
+  final Widget child;
+
+  const _MandatoryPlayUpdateGate({required this.child});
+
+  @override
+  State<_MandatoryPlayUpdateGate> createState() =>
+      _MandatoryPlayUpdateGateState();
+}
+
+class _MandatoryPlayUpdateGateState
+    extends State<_MandatoryPlayUpdateGate> {
+  bool _checking = true;
+  bool _blocked = false;
+  String _message = 'Google Play-এর আপডেট পরীক্ষা করা হচ্ছে…';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForMandatoryUpdate();
+    });
+  }
+
+  Future<void> _checkForMandatoryUpdate() async {
+    if (!kReleaseMode ||
+        kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.android) {
+      if (mounted) {
+        setState(() {
+          _checking = false;
+          _blocked = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final info = await InAppUpdate.checkForUpdate();
+
+      if (info.updateAvailability == UpdateAvailability.updateAvailable) {
+        if (info.immediateUpdateAllowed) {
+          if (mounted) {
+            setState(() {
+              _checking = true;
+              _blocked = true;
+              _message = 'নতুন সংস্করণ পাওয়া গেছে। অ্যাপ আপডেট না করা পর্যন্ত '
+                  'অ্যাপ ব্যবহার করা যাবে না।';
+            });
+          }
+
+          final result = await InAppUpdate.performImmediateUpdate();
+
+          if (result == AppUpdateResult.success) {
+            return;
+          }
+
+          if (mounted) {
+            setState(() {
+              _checking = false;
+              _blocked = true;
+              _message = 'অ্যাপটি ব্যবহার করতে নতুন সংস্করণ ইনস্টল করুন।';
+            });
+          }
+          return;
+        }
+
+        if (mounted) {
+          setState(() {
+            _checking = false;
+            _blocked = true;
+            _message = 'নতুন সংস্করণ পাওয়া গেছে, কিন্তু এই মুহূর্তে '
+                'Google Play-এর Immediate Update শুরু করা যাচ্ছে না। '
+                'আবার চেষ্টা করুন।';
+          });
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _checking = false;
+          _blocked = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _checking = false;
+          _blocked = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_blocked && !_checking) {
+      return widget.child;
+    }
+
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.system_update_rounded,
+                    size: 64,
+                    color: Color(0xFF4A237A),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'ShriPanchang আপডেট প্রয়োজন',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 16, height: 1.5),
+                  ),
+                  if (_checking) ...[
+                    const SizedBox(height: 24),
+                    const CircularProgressIndicator(),
+                  ] else if (_blocked) ...[
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: _checkForMandatoryUpdate,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('আবার চেষ্টা করুন'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,7 +201,7 @@ Future<void> main() async {
   // "excessive cold startup time" ও ANR — দুটোই সার্চ র‍্যাঙ্কিং কমায়।
   await AppSettings.instance.load();
   await Phase14Prefs.load();
-  runApp(const BanglaPanjikaApp());
+  runApp(const _MandatoryPlayUpdateGate(child: BanglaPanjikaApp()));
 
   // বাকিটা প্রথম ফ্রেম আঁকা হয়ে যাওয়ার পর — ব্যবহারকারী তখন অ্যাপ
   // দেখতে পাচ্ছেন, এগুলো পেছনে চুপচাপ হয়ে যায়।
