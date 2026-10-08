@@ -1243,6 +1243,21 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
 
     if (cards.isEmpty) return const SizedBox.shrink();
 
+    _LiveTithiData? current;
+    for (final item in cards) {
+      final isLive = !_now.isBefore(item.start) && _now.isBefore(item.end);
+      if (!isLive) continue;
+
+      if (current == null || item.end.isBefore(current.end)) {
+        current = item;
+      }
+    }
+
+    if (current == null) {
+      cards.sort((a, b) => a.start.compareTo(b.start));
+      current = cards.first;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1254,10 +1269,7 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
           ),
         ),
         const SizedBox(height: 10),
-        for (int i = 0; i < cards.length; i++) ...[
-          _buildLiveCard(cards[i]),
-          if (i != cards.length - 1) const SizedBox(height: 12),
-        ],
+        _buildLiveCard(current),
       ],
     );
   }
