@@ -1536,7 +1536,7 @@ class DurgaFestivalSeason {
             math.sin(2 * math.pi * freq * t) +
             .28 * math.sin(2 * math.pi * freq * 2 * t);
         final value = (128 + (tone * strength * envelope)).round();
-        bytes[headerSize + index] = value.clamp(0, 255);
+        bytes[headerSize + index] = value.clamp(0, 255).toInt();
       }
     }
 
