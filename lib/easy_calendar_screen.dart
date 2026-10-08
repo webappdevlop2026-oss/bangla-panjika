@@ -114,22 +114,7 @@ class _EasyBengaliCalendarScreenState
             ),
           ],
         ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextButton.icon(
-              onPressed: _goToday,
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFFFE8A6),
-              ),
-              icon: const Icon(Icons.today_rounded, size: 17),
-              label: const Text(
-                'আজ',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ),
-        ],
+        actions: const [],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(3),
           child: SizedBox(
