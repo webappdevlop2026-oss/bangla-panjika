@@ -1469,9 +1469,7 @@ class DurgaFestivalSeason {
     try {
       player = AudioPlayer();
       await player.setVolume(1.0);
-      final wav = _buildDhakWav();
-      await player.setSourceBytes(wav, mimeType: 'audio/wav');
-      await player.resume();
+      await player.play(AssetSource('audio/dhak_5sec.mp3'));
       await Future<void>.delayed(const Duration(seconds: 5));
       await player.stop();
     } catch (_) {
@@ -1483,71 +1481,6 @@ class DurgaFestivalSeason {
     }
   }
 
-  static Uint8List _buildDhakWav() {
-    const sampleRate = 8000;
-    const seconds = 5;
-    const sampleCount = sampleRate * seconds;
-    const headerSize = 44;
-    final bytes = Uint8List(headerSize + sampleCount);
-
-    void le(int offset, int value, int count) {
-      for (int i = 0; i < count; i++) {
-        bytes[offset + i] = (value >> (8 * i)) & 0xFF;
-      }
-    }
-
-    void ascii(int offset, String value) {
-      for (int i = 0; i < value.length; i++) {
-        bytes[offset + i] = value.codeUnitAt(i);
-      }
-    }
-
-    ascii(0, 'RIFF');
-    le(4, 36 + sampleCount, 4);
-    ascii(8, 'WAVE');
-    ascii(12, 'fmt ');
-    le(16, 16, 4);
-    le(20, 1, 2);
-    le(22, 1, 2);
-    le(24, sampleRate, 4);
-    le(28, sampleRate, 4);
-    le(32, 1, 2);
-    le(34, 8, 2);
-    ascii(36, 'data');
-    le(40, sampleCount, 4);
-
-    for (int i = 0; i < sampleCount; i++) {
-      bytes[headerSize + i] = 128;
-    }
-
-    const beats = <double>[
-      0.00, 0.28, 0.53, 0.82, 1.08, 1.37, 1.62, 1.91,
-      2.18, 2.45, 2.72, 2.98, 3.27, 3.52, 3.81, 4.08,
-      4.34, 4.60, 4.82,
-    ];
-
-    for (int b = 0; b < beats.length; b++) {
-      final start = (beats[b] * sampleRate).round();
-      final freq = b % 3 == 1 ? 142.0 : 94.0;
-      final strength = b % 4 == 0 ? 84.0 : 68.0;
-      final length = (sampleRate * .22).round();
-
-      for (int k = 0; k < length; k++) {
-        final index = start + k;
-        if (index >= sampleCount) break;
-
-        final t = k / sampleRate;
-        final envelope = math.exp(-14 * t);
-        final tone =
-            math.sin(2 * math.pi * freq * t) +
-            .28 * math.sin(2 * math.pi * freq * 2 * t);
-        final value = (128 + (tone * strength * envelope)).round();
-        bytes[headerSize + index] = value.clamp(0, 255).toInt();
-      }
-    }
-
-    return bytes;
-  }
 }
 
 class DurgaFestivalLiveCard extends StatefulWidget {
