@@ -547,18 +547,24 @@ class _EasyBengaliCalendarScreenState
             if (isMajorFestival || shortLabel.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 3),
-                child: Text(
-                  shortLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isMajorFestival
-                        ? const Color(0xFFD52B2B)
-                        : const Color(0xFF0069A8),
-                    fontSize: 10.5,
-                    height: 1.05,
-                    fontWeight: FontWeight.w800,
+                child: SizedBox(
+                  height: 18,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.center,
+                    child: Text(
+                      shortLabel,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isMajorFestival
+                            ? const Color(0xFFD52B2B)
+                            : const Color(0xFF0069A8),
+                        fontSize: 10.5,
+                        height: 1.05,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                 ),
               ),
