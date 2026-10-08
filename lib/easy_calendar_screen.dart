@@ -1629,19 +1629,31 @@ class _DurgaFestivalLiveCardState extends State<DurgaFestivalLiveCard>
         : '${item.event.label} শুরু হতে ${_countdown(item.start.difference(_now))}';
 
     Widget drum(bool left) {
+      final dhaki = Image.memory(
+        base64Decode(_dhakiSideImageBase64),
+        width: 54,
+        height: 94,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+      );
+
       return AnimatedBuilder(
         animation: _dhak,
         builder: (_, __) {
-          final turn = (_dhak.value - .5) * .08 * (left ? -1 : 1);
-          final scale = .96 + (_dhak.value * .06);
+          final turn = (_dhak.value - .5) * .05 * (left ? -1 : 1);
+          final scale = .98 + (_dhak.value * .04);
+          final image = left
+              ? dhaki
+              : Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.diagonal3Values(-1, 1, 1),
+                  child: dhaki,
+                );
           return Transform.rotate(
             angle: turn,
             child: Transform.scale(
               scale: scale,
-              child: CustomPaint(
-                size: const Size(46, 52),
-                painter: _DhakPainter(mirrored: !left),
-              ),
+              child: image,
             ),
           );
         },
@@ -1782,6 +1794,8 @@ class _DurgaFestivalLiveCardState extends State<DurgaFestivalLiveCard>
   }
 }
 
+
+const String _dhakiSideImageBase64 = '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';
 
 class _DhakPainter extends CustomPainter {
   final bool mirrored;
