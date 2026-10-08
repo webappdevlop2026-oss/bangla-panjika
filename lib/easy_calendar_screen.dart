@@ -174,7 +174,7 @@ class _EasyBengaliCalendarScreenState
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.74,
+                  childAspectRatio: 0.72,
                   crossAxisSpacing: 2,
                   mainAxisSpacing: 2,
                 ),
@@ -582,8 +582,8 @@ class _EasyBengaliCalendarScreenState
                       color: isSunday || isToday || isMajorFestival
                           ? const Color(0xFFB31313)
                           : const Color(0xFF222222),
-                      fontSize: 35,
-                      height: .95,
+                      fontSize: 40,
+                      height: .98,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -591,7 +591,7 @@ class _EasyBengaliCalendarScreenState
               ),
             ),
             Container(
-              constraints: const BoxConstraints(minHeight: 21),
+              constraints: const BoxConstraints(minHeight: 23),
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
               decoration: BoxDecoration(
                 color: isMajorFestival
@@ -613,8 +613,8 @@ class _EasyBengaliCalendarScreenState
                       : isSpecialTithi
                           ? const Color(0xFF50316B)
                           : const Color(0xFF4B4742),
-                  fontSize: isMajorFestival ? 8.8 : 8.4,
-                  height: 1.05,
+                  fontSize: isMajorFestival ? 9.4 : 9.0,
+                  height: 1.08,
                   fontWeight: FontWeight.w900,
                 ),
               ),
