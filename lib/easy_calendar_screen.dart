@@ -314,37 +314,93 @@ class _EasyBengaliCalendarScreenState
       'gari': ('🚗', 'গাড়ি কেনা'),
     };
 
-    final grouped = <String, List<DateTime>>{
-      for (final key in categories.keys) key: <DateTime>[],
-    };
+    final items = <(String icon, String title, String dates)>[];
 
-    for (DateTime day = info.start;
-        !day.isAfter(info.end);
-        day = day.add(const Duration(days: 1))) {
-      final events = BengaliCalendarData.eventsFor(day);
-      for (final event in events) {
-        final dates = grouped[event.category];
-        if (dates == null) continue;
-        if (!dates.any(
-          (d) =>
-              d.year == day.year &&
-              d.month == day.month &&
-              d.day == day.day,
-        )) {
-          dates.add(day);
-        }
+    for (final entry in categories.entries) {
+      final dates = <DateTime>[];
+
+      for (DateTime day = info.start;
+          !day.isAfter(info.end);
+          day = day.add(const Duration(days: 1))) {
+        final hasCategory = BengaliCalendarData.eventsFor(day)
+            .any((event) => event.category == entry.key);
+        if (!hasCategory) continue;
+        dates.add(day);
       }
+
+      if (dates.isEmpty) continue;
+
+      final dateText = dates.map((d) {
+        final bDay = d.difference(info.start).inDays + 1;
+        return bnNum(bDay);
+      }).join(', ');
+
+      items.add((entry.value.$1, entry.value.$2, dateText));
     }
 
-    final visible = categories.entries
-        .where((entry) => grouped[entry.key]!.isNotEmpty)
-        .toList();
+    if (items.isEmpty) return const SizedBox.shrink();
 
-    if (visible.isEmpty) return const SizedBox.shrink();
+    return _MonthlyAuspiciousTicker(
+      monthName: info.name,
+      year: info.year,
+      items: items,
+    );
+  }
+
+class _MonthlyAuspiciousTicker extends StatefulWidget {
+  final String monthName;
+  final int year;
+  final List<(String icon, String title, String dates)> items;
+
+  const _MonthlyAuspiciousTicker({
+    required this.monthName,
+    required this.year,
+    required this.items,
+  });
+
+  @override
+  State<_MonthlyAuspiciousTicker> createState() =>
+      _MonthlyAuspiciousTickerState();
+}
+
+class _MonthlyAuspiciousTickerState extends State<_MonthlyAuspiciousTicker> {
+  Timer? _timer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || widget.items.length <= 1) return;
+      setState(() {
+        _index = (_index + 1) % widget.items.length;
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _MonthlyAuspiciousTicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.monthName != widget.monthName ||
+        oldWidget.year != widget.year ||
+        oldWidget.items.length != widget.items.length) {
+      _index = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.items[_index];
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFBF3),
         borderRadius: BorderRadius.circular(14),
@@ -359,7 +415,7 @@ class _EasyBengaliCalendarScreenState
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'এই মাসের শুভ দিন • ${info.name} ${bnNum(info.year)}',
+                  'এই মাসের শুভ দিন • ${widget.monthName} ${bnNum(widget.year)}',
                   style: const TextStyle(
                     color: Color(0xFF6C3A18),
                     fontSize: 14.5,
@@ -369,83 +425,81 @@ class _EasyBengaliCalendarScreenState
               ),
             ],
           ),
-          const SizedBox(height: 9),
-          SizedBox(
-            height: 92,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: visible.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final entry = visible[index];
-                final meta = entry.value;
-                final dates = grouped[entry.key]!;
-                final dateText = dates
-                    .map((d) {
-                      final bDay = d.difference(info.start).inDays + 1;
-                      return bnNum(bDay);
-                    })
-                    .join(', ');
-
-                return Container(
-                  width: 138,
-                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE7DED3)),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x10000000),
-                        blurRadius: 5,
-                        offset: Offset(0, 2),
+          const SizedBox(height: 8),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            transitionBuilder: (child, animation) {
+              final offset = Tween<Offset>(
+                begin: const Offset(0.18, 0),
+                end: Offset.zero,
+              ).animate(animation);
+              return SlideTransition(
+                position: offset,
+                child: FadeTransition(opacity: animation, child: child),
+              );
+            },
+            child: Container(
+              key: ValueKey('${item.$2}-$_index'),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: const Color(0xFFE8DFD5)),
+              ),
+              child: Row(
+                children: [
+                  Text(item.$1, style: const TextStyle(fontSize: 24)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      item.$2,
+                      style: const TextStyle(
+                        color: Color(0xFF2E2925),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
                       ),
-                    ],
+                    ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${meta.$1} ${meta.$2}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF2F2A25),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        dateText,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF9A1818),
-                          fontSize: 16,
-                          height: 1.1,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        info.name,
-                        style: const TextStyle(
-                          color: Color(0xFF74685C),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    item.$3,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: Color(0xFF9A1818),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
           ),
+          if (widget.items.length > 1) ...[
+            const SizedBox(height: 7),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(widget.items.length, (i) {
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  width: i == _index ? 14 : 5,
+                  height: 5,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: i == _index
+                        ? const Color(0xFF9A1818)
+                        : const Color(0xFFD6C9BC),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                );
+              }),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
 
   Widget _buildWeekHeader() {
     return Container(
