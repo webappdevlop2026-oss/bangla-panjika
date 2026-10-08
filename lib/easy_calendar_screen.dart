@@ -75,6 +75,11 @@ class _EasyBengaliCalendarScreenState
     return events.any(
       (event) =>
           event.label.contains('দুর্গা') ||
+          event.label.contains('ষষ্ঠী') ||
+          event.label.contains('সপ্তমী') ||
+          event.label.contains('অষ্টমী') ||
+          event.label.contains('নবমী') ||
+          event.label.contains('দশমী') ||
           event.label.contains('মহাষষ্ঠী') ||
           event.label.contains('মহাসপ্তমী') ||
           event.label.contains('মহাষ্টমী') ||
@@ -356,6 +361,14 @@ class _EasyBengaliCalendarScreenState
         tithi.name.contains('অমাবস্যা') ||
         tithi.name.contains('একাদশী');
 
+    final isSpecialTithi = tithi.name.contains('অমাবস্যা') ||
+        tithi.name.contains('পূর্ণিমা') ||
+        tithi.name.contains('একাদশী') ||
+        tithi.name.contains('অষ্টমী') ||
+        tithi.name.contains('নবমী') ||
+        tithi.name.contains('চতুর্দশী') ||
+        tithi.name.contains('সংক্রান্তি');
+
     final isMajorFestival = _isMajorFestival(events);
     final isDurgaFestival = _isDurgaFestival(events);
     final majorFestivalEvent = isMajorFestival
@@ -484,25 +497,39 @@ class _EasyBengaliCalendarScreenState
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    Text(
-                      showMoon
-                          ? (tithi.name.contains('পূর্ণিমা')
-                              ? '🌕 ${tithi.name}'
-                              : tithi.name.contains('অমাবস্যা')
-                                  ? '🌑 ${tithi.name}'
-                                  : '◐ ${tithi.name}')
-                          : tithi.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: showMoon
-                            ? const Color(0xFF3E2723)
-                            : const Color(0xFF5D4037),
-                        fontSize: 8.8,
-                        height: 1.0,
-                        fontWeight:
-                            showMoon ? FontWeight.w800 : FontWeight.w700,
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 1,
+                        vertical: isSpecialTithi ? 2 : 0,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSpecialTithi
+                            ? const Color(0xFFFFF1D6)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        showMoon
+                            ? (tithi.name.contains('পূর্ণিমা')
+                                ? '🌕 ${tithi.name}'
+                                : tithi.name.contains('অমাবস্যা')
+                                    ? '🌑 ${tithi.name}'
+                                    : '◐ ${tithi.name}')
+                            : tithi.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: isSpecialTithi
+                              ? const Color(0xFF9B1C1C)
+                              : const Color(0xFF5D4037),
+                          fontSize: isSpecialTithi ? 9.3 : 8.4,
+                          height: 1.0,
+                          fontWeight: isSpecialTithi
+                              ? FontWeight.w900
+                              : FontWeight.w700,
+                        ),
                       ),
                     ),
                     if (majorFestivalLabel != null) ...[
@@ -528,7 +555,7 @@ class _EasyBengaliCalendarScreenState
                                 color: isDurgaFestival
                                     ? const Color(0xFFB71C1C)
                                     : const Color(0xFFB45309),
-                                fontSize: isDurgaFestival ? 8.8 : 8.5,
+                                fontSize: isDurgaFestival ? 9.2 : 8.7,
                                 height: 1.0,
                                 fontWeight: FontWeight.w900,
                               ),
