@@ -13,9 +13,6 @@ class _EasyBengaliCalendarScreenState
     extends State<EasyBengaliCalendarScreen>
     with SingleTickerProviderStateMixin {
   DateTime _anchor = DateTime.now();
-  String _mode = 'সম্পূর্ণ মাস';
-
-  static const _modes = ['সম্পূর্ণ মাস', 'বিশেষ দিন', 'বিবাহ'];
   static const _weekdays = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
 
   late final AnimationController _festivalPulseController;
@@ -146,8 +143,6 @@ class _EasyBengaliCalendarScreenState
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 28),
           children: [
             _buildMonthTitle(info),
-            const SizedBox(height: 9),
-            _buildModeBar(),
             const SizedBox(height: 9),
             _buildWeekHeader(),
             const SizedBox(height: 3),
@@ -304,57 +299,6 @@ class _EasyBengaliCalendarScreenState
     );
   }
 
-  Widget _buildModeBar() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAD9BC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD0AE78)),
-      ),
-      child: Row(
-        children: _modes.map((mode) {
-          final selected = _mode == mode;
-          return Expanded(
-            child: InkWell(
-              onTap: () => setState(() => _mode = mode),
-              borderRadius: BorderRadius.circular(9),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                height: 36,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? const Color(0xFF8D1515)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(9),
-                  boxShadow: selected
-                      ? const [
-                          BoxShadow(
-                            color: Color(0x22000000),
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Text(
-                  mode,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color:
-                        selected ? Colors.white : const Color(0xFF5A3A22),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
 
   Widget _buildWeekHeader() {
     return Container(
@@ -479,15 +423,7 @@ class _EasyBengaliCalendarScreenState
     final events = BengaliCalendarData.eventsFor(greg);
     final tithi = PanchangCalculator.tithiFor(greg);
 
-    final filteredEvents = _mode == 'সম্পূর্ণ মাস'
-        ? events
-        : _mode == 'বিবাহ'
-            ? events
-                .where(
-                  (e) => e.label.contains('বিবাহ') || e.label.contains('শুভ'),
-                )
-                .toList()
-            : events;
+    final filteredEvents = events;
 
     final shortLabel = _shortCalendarLabel(tithi, events, filteredEvents);
     final isMajorFestival = _isMajorFestival(events);
