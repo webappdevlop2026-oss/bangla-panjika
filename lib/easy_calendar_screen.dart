@@ -491,41 +491,21 @@ class _EasyBengaliCalendarScreenState
             ),
             const SizedBox(height: 4),
             Expanded(
-              child: isMajorFestival
-                  ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _majorFestivalIcon(events),
-                          style: const TextStyle(fontSize: 27),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          bnNum(bengaliDay),
-                          style: TextStyle(
-                            color: mainColor,
-                            fontSize: 25,
-                            height: 1,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    )
-                  : Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          bnNum(bengaliDay),
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: mainColor,
-                            fontSize: 43,
-                            height: .95,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    bnNum(bengaliDay),
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: mainColor,
+                      fontSize: 43,
+                      height: .95,
+                      fontWeight: FontWeight.w900,
                     ),
+                  ),
+                ),
+              ),
             ),
             if (isMajorFestival || shortLabel.isNotEmpty)
               Padding(
@@ -584,6 +564,29 @@ class _EasyBengaliCalendarScreenState
                   decoration: BoxDecoration(
                     color: const Color(0xFFD3B88C),
                     borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+                Container(
+                  width: double.infinity,
+                  height: 105,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFFFFF3DF),
+                        Color(0xFFFFE3D6),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE6C9A8)),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _majorFestivalIcon(events),
+                      style: const TextStyle(fontSize: 58),
+                    ),
                   ),
                 ),
                 Text(
