@@ -1321,3 +1321,456 @@ class _HomeEkadashiTimeBox extends StatelessWidget {
   }
 }
 
+
+
+// =====================================================================
+// Mahalaya -> Chhath seasonal Durga Puja LIVE field
+// =====================================================================
+
+class _DurgaSeasonEvent {
+  final DateTime day;
+  final CalendarEvent event;
+  final DateTime start;
+  final DateTime end;
+
+  const _DurgaSeasonEvent({
+    required this.day,
+    required this.event,
+    required this.start,
+    required this.end,
+  });
+}
+
+class DurgaFestivalSeason {
+  const DurgaFestivalSeason._();
+
+  static bool _isMahalaya(String label) =>
+      label.contains('মহালয়া') || label.contains('মহালয়া');
+
+  static bool _isChhath(String label) =>
+      label.contains('ছট পূজা') || label.contains('ছটপূজা');
+
+  static (DateTime start, DateTime end)? boundsFor(DateTime now) {
+    final scanStart = DateTime(now.year, 8, 1);
+    final scanEnd = DateTime(now.year, 12, 15);
+    DateTime? start;
+    DateTime? end;
+
+    for (DateTime day = scanStart;
+        !day.isAfter(scanEnd);
+        day = day.add(const Duration(days: 1))) {
+      final events = BengaliCalendarData.eventsFor(day);
+      for (final event in events) {
+        if (_isMahalaya(event.label)) {
+          start = DateTime(day.year, day.month, day.day);
+        }
+        if (_isChhath(event.label)) {
+          end = DateTime(day.year, day.month, day.day, 23, 59, 59);
+        }
+      }
+    }
+
+    if (start == null || end == null || end.isBefore(start)) return null;
+    return (start, end);
+  }
+
+  static bool isActive(DateTime now) {
+    final bounds = boundsFor(now);
+    if (bounds == null) return false;
+    return !now.isBefore(bounds.$1) && !now.isAfter(bounds.$2);
+  }
+
+  static List<_DurgaSeasonEvent> eventsFor(DateTime now) {
+    final bounds = boundsFor(now);
+    if (bounds == null) return const [];
+
+    final result = <_DurgaSeasonEvent>[];
+    for (DateTime day = bounds.$1;
+        !day.isAfter(bounds.$2);
+        day = day.add(const Duration(days: 1))) {
+      final events = BengaliCalendarData.eventsFor(day);
+      for (final event in events) {
+        if (!_includeEvent(event.label)) continue;
+        final timing = _timingFor(day, event);
+        result.add(
+          _DurgaSeasonEvent(
+            day: day,
+            event: event,
+            start: timing.$1,
+            end: timing.$2,
+          ),
+        );
+      }
+    }
+
+    result.sort((a, b) => a.start.compareTo(b.start));
+    return result;
+  }
+
+  static bool _includeEvent(String label) {
+    const keys = [
+      'মহালয়া',
+      'মহালয়া',
+      'মহাচতুর্থী',
+      'মহাপঞ্চমী',
+      'মহাষষ্ঠী',
+      'মহাসপ্তমী',
+      'মহাষ্টমী',
+      'মহানবমী',
+      'বিজয়া দশমী',
+      'বিজয়া দশমী',
+      'কোজাগরী লক্ষ্মীপূজা',
+      'ধনতেরাস',
+      'ভূত চতুর্দশী',
+      'কালীপূজা',
+      'দীপাবলি',
+      'ভাইফোঁটা',
+      'ছট পূজা',
+      'ছটপূজা',
+    ];
+    return keys.any(label.contains);
+  }
+
+  static (DateTime, DateTime) _timingFor(
+    DateTime day,
+    CalendarEvent event,
+  ) {
+    final label = event.label;
+
+    // Chhath is primarily sunrise/sunset observance; keeping the final
+    // seasonal card alive through the whole Chhath day is less confusing.
+    if (_isChhath(label)) {
+      return (
+        DateTime(day.year, day.month, day.day),
+        DateTime(day.year, day.month, day.day, 23, 59, 59),
+      );
+    }
+
+    // For other Puja days use the actual tithi window around the day's
+    // sunrise. This makes Mahashtami etc. show real start/end time.
+    final sun = PanchangCalculator.sunTimes(
+      day,
+      lat: AppLocation.lat,
+      lon: AppLocation.lon,
+    );
+    final timing = PanchangCalculator.tithiTiming(sun.sunrise);
+    return (timing.$1, timing.$2);
+  }
+
+  static Future<void> playLaunchDhakIfActive() async {
+    final now = DateTime.now();
+    if (!isActive(now)) return;
+
+    AudioPlayer? player;
+    try {
+      player = AudioPlayer();
+      await player.setVolume(.88);
+      await player.play(BytesSource(_buildDhakWav()));
+      await Future<void>.delayed(const Duration(seconds: 5));
+      await player.stop();
+    } catch (_) {
+      // Audio failure must never block or crash app startup.
+    } finally {
+      try {
+        await player?.dispose();
+      } catch (_) {}
+    }
+  }
+
+  static Uint8List _buildDhakWav() {
+    const sampleRate = 8000;
+    const seconds = 5;
+    const sampleCount = sampleRate * seconds;
+    const headerSize = 44;
+    final bytes = Uint8List(headerSize + sampleCount);
+
+    void le(int offset, int value, int count) {
+      for (int i = 0; i < count; i++) {
+        bytes[offset + i] = (value >> (8 * i)) & 0xFF;
+      }
+    }
+
+    void ascii(int offset, String value) {
+      for (int i = 0; i < value.length; i++) {
+        bytes[offset + i] = value.codeUnitAt(i);
+      }
+    }
+
+    ascii(0, 'RIFF');
+    le(4, 36 + sampleCount, 4);
+    ascii(8, 'WAVE');
+    ascii(12, 'fmt ');
+    le(16, 16, 4);
+    le(20, 1, 2);
+    le(22, 1, 2);
+    le(24, sampleRate, 4);
+    le(28, sampleRate, 4);
+    le(32, 1, 2);
+    le(34, 8, 2);
+    ascii(36, 'data');
+    le(40, sampleCount, 4);
+
+    for (int i = 0; i < sampleCount; i++) {
+      bytes[headerSize + i] = 128;
+    }
+
+    const beats = <double>[
+      0.00, 0.28, 0.53, 0.82, 1.08, 1.37, 1.62, 1.91,
+      2.18, 2.45, 2.72, 2.98, 3.27, 3.52, 3.81, 4.08,
+      4.34, 4.60, 4.82,
+    ];
+
+    for (int b = 0; b < beats.length; b++) {
+      final start = (beats[b] * sampleRate).round();
+      final freq = b % 3 == 1 ? 142.0 : 94.0;
+      final strength = b % 4 == 0 ? 84.0 : 68.0;
+      final length = (sampleRate * .22).round();
+
+      for (int k = 0; k < length; k++) {
+        final index = start + k;
+        if (index >= sampleCount) break;
+
+        final t = k / sampleRate;
+        final envelope = math.exp(-14 * t);
+        final tone =
+            math.sin(2 * math.pi * freq * t) +
+            .28 * math.sin(2 * math.pi * freq * 2 * t);
+        final value = (128 + (tone * strength * envelope)).round();
+        bytes[headerSize + index] = value.clamp(0, 255);
+      }
+    }
+
+    return bytes;
+  }
+}
+
+class DurgaFestivalLiveCard extends StatefulWidget {
+  const DurgaFestivalLiveCard({super.key});
+
+  @override
+  State<DurgaFestivalLiveCard> createState() => _DurgaFestivalLiveCardState();
+}
+
+class _DurgaFestivalLiveCardState extends State<DurgaFestivalLiveCard>
+    with SingleTickerProviderStateMixin {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+  late final AnimationController _dhak;
+
+  @override
+  void initState() {
+    super.initState();
+    _dhak = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..repeat(reverse: true);
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _dhak.dispose();
+    super.dispose();
+  }
+
+  String _countdown(Duration d) {
+    if (d.isNegative) d = Duration.zero;
+    final total = d.inSeconds;
+    final days = total ~/ 86400;
+    final hours = (total % 86400) ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final seconds = total % 60;
+
+    if (days > 0) {
+      return '${bnNum(days)} দিন ${bnNum(hours)} ঘ '
+          '${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+    }
+    return '${bnNum(hours).padLeft(2, '০')}:'
+        '${bnNum(minutes).padLeft(2, '০')}:'
+        '${bnNum(seconds).padLeft(2, '০')}';
+  }
+
+  _DurgaSeasonEvent? _currentOrNext() {
+    final events = DurgaFestivalSeason.eventsFor(_now);
+    if (events.isEmpty) return null;
+
+    for (final item in events) {
+      if (!_now.isBefore(item.start) && _now.isBefore(item.end)) {
+        return item;
+      }
+    }
+    for (final item in events) {
+      if (_now.isBefore(item.start)) return item;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!DurgaFestivalSeason.isActive(_now)) {
+      return const SizedBox.shrink();
+    }
+
+    final item = _currentOrNext();
+    if (item == null) return const SizedBox.shrink();
+
+    final live = !_now.isBefore(item.start) && _now.isBefore(item.end);
+    final status = live
+        ? '🔴 LIVE • শেষ হতে ${_countdown(item.end.difference(_now))}'
+        : '${item.event.label} শুরু হতে ${_countdown(item.start.difference(_now))}';
+
+    Widget drum(bool left) {
+      return AnimatedBuilder(
+        animation: _dhak,
+        builder: (_, __) {
+          final turn = (_dhak.value - .5) * .06 * (left ? -1 : 1);
+          final scale = .96 + (_dhak.value * .07);
+          return Transform.rotate(
+            angle: turn,
+            child: Transform.scale(
+              scale: scale,
+              child: const Text('🥁', style: TextStyle(fontSize: 34)),
+            ),
+          );
+        },
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(12, 13, 12, 12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF8E1111),
+            Color(0xFFC23B20),
+            Color(0xFFB47512),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFFD87A), width: 1.4),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              drum(true),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  children: [
+                    const Text(
+                      'দুর্গোৎসব লাইভ',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFFFFE8A6),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .8,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.event.label,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              drum(false),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${PanchangCalculator.weekdayName(item.day)} • '
+            '${bnNum(item.day.day)} ${gregMonthBn(item.day.month)} '
+            '${bnNum(item.day.year)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _HomeEkadashiTimeBox(
+                  label: 'লাগবে / শুরু',
+                  value: '${bnNum(item.start.day)} '
+                      '${gregMonthBn(item.start.month)} • '
+                      '${bnTime12(item.start)}',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _HomeEkadashiTimeBox(
+                  label: 'ছাড়বে / শেষ',
+                  value: '${bnNum(item.end.day)} '
+                      '${gregMonthBn(item.end.month)} • '
+                      '${bnTime12(item.end)}',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+            decoration: BoxDecoration(
+              color: live
+                  ? const Color(0x2D26FF96)
+                  : const Color(0x22FFFFFF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: live
+                    ? const Color(0x668CFFC1)
+                    : const Color(0x33FFFFFF),
+              ),
+            ),
+            child: Text(
+              status,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'মহালয়া থেকে ছটপূজা পর্যন্ত • প্রতি সেকেন্ডে লাইভ সময়',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFFFFE7BD),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
