@@ -1371,7 +1371,11 @@ class DurgaFestivalSeason {
     }
 
     if (start == null || end == null || end.isBefore(start)) return null;
-    return (start, end);
+
+    // দুর্গোৎসব LIVE field মহালয়ার একদিন আগে থেকেই দেখাবে,
+    // যাতে ব্যবহারকারী আগের দিন থেকেই countdown দেখতে পান।
+    final visibleFrom = start.subtract(const Duration(days: 1));
+    return (visibleFrom, end);
   }
 
   static bool isActive(DateTime now) {
