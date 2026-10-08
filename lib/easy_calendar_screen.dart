@@ -659,6 +659,32 @@ class _EasyBengaliCalendarScreenState
 // Home Screen — আলাদা একাদশী field
 // =====================================================================
 
+class _LiveTithiData {
+  final String title;
+  final String icon;
+  final DateTime day;
+  final DateTime start;
+  final DateTime end;
+  final String subtitle;
+  final CalendarEvent? event;
+  final List<Color> colors;
+  final String startLabel;
+  final String endLabel;
+
+  const _LiveTithiData({
+    required this.title,
+    required this.icon,
+    required this.day,
+    required this.start,
+    required this.end,
+    required this.subtitle,
+    required this.event,
+    required this.colors,
+    this.startLabel = 'শুরু',
+    this.endLabel = 'শেষ',
+  });
+}
+
 class HomeEkadashiCard extends StatefulWidget {
   const HomeEkadashiCard({super.key});
 
@@ -670,14 +696,36 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
   Timer? _timer;
   DateTime _now = DateTime.now();
 
+  _LiveTithiData? _ekadashi;
+  _LiveTithiData? _ashtami;
+  _LiveTithiData? _amavasya;
+  _LiveTithiData? _purnima;
+  _LiveTithiData? _upobash;
+
   @override
   void initState() {
     super.initState();
     LocationService.instance.addListener(_onLocationChanged);
     unawaited(LocationService.instance.refresh());
+    _refreshData();
+
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() => _now = DateTime.now());
+      final now = DateTime.now();
+      final shouldRefresh = [
+        _ekadashi,
+        _ashtami,
+        _amavasya,
+        _purnima,
+        _upobash,
+      ].whereType<_LiveTithiData>().any(
+            (item) => !item.end.isAfter(now),
+          );
+
+      setState(() => _now = now);
+      if (shouldRefresh) {
+        _refreshData();
+      }
     });
   }
 
@@ -689,35 +737,171 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
   }
 
   void _onLocationChanged() {
-    if (mounted) setState(() {});
+    _refreshData();
   }
 
-  (DateTime day, String paksha, DateTime start, DateTime end)? _next() {
-    final base = DateTime(_now.year, _now.month, _now.day);
+  void _refreshData() {
+    final now = DateTime.now();
 
-    for (int i = 0; i <= 45; i++) {
+    final ekadashi = _findTithi(
+      'একাদশী',
+      title: 'একাদশী',
+      icon: '🙏',
+      colors: const [
+        Color(0xFF3C176A),
+        Color(0xFF741B63),
+        Color(0xFF9A5B16),
+      ],
+      now: now,
+    );
+
+    final ashtami = _findTithi(
+      'অষ্টমী',
+      title: 'অষ্টমী',
+      icon: '🌺',
+      colors: const [
+        Color(0xFF8F1D1D),
+        Color(0xFFC2412D),
+        Color(0xFFB7791F),
+      ],
+      now: now,
+    );
+
+    final amavasya = _findTithi(
+      'অমাবস্যা',
+      title: 'অমাবস্যা',
+      icon: '🌑',
+      colors: const [
+        Color(0xFF101828),
+        Color(0xFF27324A),
+        Color(0xFF3D2D62),
+      ],
+      now: now,
+    );
+
+    final purnima = _findTithi(
+      'পূর্ণিমা',
+      title: 'পূর্ণিমা',
+      icon: '🌕',
+      colors: const [
+        Color(0xFF305B8C),
+        Color(0xFF557FA8),
+        Color(0xFF8B6E3C),
+      ],
+      now: now,
+    );
+
+    final upobash = _findUpobash(
+      now: now,
+      colors: const [
+        Color(0xFF7A3E08),
+        Color(0xFFA85B12),
+        Color(0xFF8D6A19),
+      ],
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _now = now;
+      _ekadashi = ekadashi;
+      _ashtami = ashtami;
+      _amavasya = amavasya;
+      _purnima = purnima;
+      _upobash = upobash;
+    });
+  }
+
+  _LiveTithiData? _findTithi(
+    String keyword, {
+    required String title,
+    required String icon,
+    required List<Color> colors,
+    required DateTime now,
+  }) {
+    final base = DateTime(now.year, now.month, now.day);
+
+    for (int i = 0; i <= 60; i++) {
       final day = base.add(Duration(days: i));
-      final sunrise = PanchangCalculator.sunTimes(
-        day,
-        lat: AppLocation.lat,
-        lon: AppLocation.lon,
-      ).sunrise;
-
-      final atSunrise = PanchangCalculator.tithiFor(sunrise);
-      final hasEvent = BengaliCalendarData.eventsFor(
-        day,
-      ).any((e) => e.category == 'ekadashi');
-
-      if (atSunrise.name != 'একাদশী' && !hasEvent) continue;
 
       for (int h = 0; h < 24; h++) {
         final probe = DateTime(day.year, day.month, day.day, h, 30);
-        final t = PanchangCalculator.tithiFor(probe);
-        if (t.name != 'একাদশী') continue;
+        final tithi = PanchangCalculator.tithiFor(probe);
+        if (!tithi.name.contains(keyword)) continue;
 
         final timing = PanchangCalculator.tithiTiming(probe);
-        if (!timing.$2.isAfter(_now)) continue;
-        return (day, t.paksha, timing.$1, timing.$2);
+        final start = timing.$1;
+        final end = timing.$2;
+        if (!end.isAfter(now)) continue;
+
+        CalendarEvent? event;
+        for (final e in BengaliCalendarData.eventsFor(day)) {
+          if (e.label.contains(keyword) ||
+              (keyword == 'একাদশী' && e.category == 'ekadashi')) {
+            event = e;
+            break;
+          }
+        }
+
+        final pakshaText = tithi.paksha.toString().trim();
+        final subtitle = pakshaText.isEmpty
+            ? title
+            : '$pakshaText পক্ষের $title';
+
+        return _LiveTithiData(
+          title: title,
+          icon: icon,
+          day: day,
+          start: start,
+          end: end,
+          subtitle: subtitle,
+          event: event,
+          colors: colors,
+        );
+      }
+    }
+    return null;
+  }
+
+  _LiveTithiData? _findUpobash({
+    required DateTime now,
+    required List<Color> colors,
+  }) {
+    final base = DateTime(now.year, now.month, now.day);
+
+    const keywords = [
+      'উপবাস',
+      'ব্রত',
+      'একাদশী',
+      'শিবরাত্রি',
+      'সংকষ্টি',
+      'সঙ্কষ্টি',
+    ];
+
+    for (int i = 0; i <= 90; i++) {
+      final day = base.add(Duration(days: i));
+      final events = BengaliCalendarData.eventsFor(day);
+
+      for (final event in events) {
+        final matches =
+            keywords.any((keyword) => event.label.contains(keyword));
+        if (!matches) continue;
+
+        final start = DateTime(day.year, day.month, day.day);
+        final end = DateTime(day.year, day.month, day.day, 23, 59, 59);
+        if (!end.isAfter(now)) continue;
+
+        return _LiveTithiData(
+          title: 'উপবাস ও ব্রত',
+          icon: '🪔',
+          day: day,
+          start: start,
+          end: end,
+          subtitle: event.label,
+          event: event,
+          colors: colors,
+          startLabel: 'দিন শুরু',
+          endLabel: 'দিন শেষ',
+        );
       }
     }
     return null;
@@ -725,6 +909,7 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
 
   String _duration(Duration d) {
     if (d.isNegative) d = Duration.zero;
+
     final total = d.inSeconds;
     final days = total ~/ 86400;
     final hours = (total % 86400) ~/ 3600;
@@ -732,40 +917,31 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
     final seconds = total % 60;
 
     if (days > 0) {
-      return '${bnNum(days)} দিন ${bnNum(hours)} ঘ ${bnNum(minutes)} মি';
+      return '${bnNum(days)} দিন ${bnNum(hours)} ঘ '
+          '${bnNum(minutes)} মি ${bnNum(seconds)} সে';
     }
     if (hours > 0) {
-      return '${bnNum(hours)} ঘ ${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+      return '${bnNum(hours)} ঘ ${bnNum(minutes)} মি '
+          '${bnNum(seconds)} সে';
     }
     return '${bnNum(minutes)} মি ${bnNum(seconds)} সে';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final data = _next();
-    if (data == null) return const SizedBox.shrink();
+  String _statusText(_LiveTithiData data) {
+    if (_now.isBefore(data.start)) {
+      return 'শুরু হতে ${_duration(data.start.difference(_now))}';
+    }
+    if (_now.isBefore(data.end)) {
+      return '🔴 LIVE • শেষ হতে ${_duration(data.end.difference(_now))}';
+    }
+    return 'শেষ হয়েছে';
+  }
 
-    final day = data.$1;
-    final paksha = data.$2;
-    final start = data.$3;
-    final end = data.$4;
-    final active = !_now.isBefore(start) && _now.isBefore(end);
-
-    final countdown = _now.isBefore(start)
-        ? 'শুরু হতে ${_duration(start.difference(_now))}'
-        : 'একাদশী চলছে • শেষ হতে ${_duration(end.difference(_now))}';
-
+  Widget _buildLiveCard(_LiveTithiData data) {
+    final active = !_now.isBefore(data.start) && _now.isBefore(data.end);
     final loc = LocationService.instance.hasGps
         ? 'GPS Live'
         : '${AppLocation.district} • জেলা';
-
-    CalendarEvent? event;
-    for (final e in BengaliCalendarData.eventsFor(day)) {
-      if (e.category == 'ekadashi') {
-        event = e;
-        break;
-      }
-    }
 
     return InkWell(
       borderRadius: BorderRadius.circular(20),
@@ -773,8 +949,8 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
         context,
         MaterialPageRoute(
           builder: (_) => PanchangOccasionDetailScreen(
-            date: day,
-            event: event,
+            date: data.day,
+            event: data.event,
           ),
         ),
       ),
@@ -782,64 +958,93 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
         width: double.infinity,
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF3C176A),
-              Color(0xFF741B63),
-              Color(0xFF9A5B16),
-            ],
+            colors: data.colors,
           ),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0x66FFD98A)),
+          border: Border.all(
+            color: active
+                ? const Color(0x99FFF2A8)
+                : const Color(0x55FFFFFF),
+            width: active ? 1.6 : 1,
+          ),
+          boxShadow: active
+              ? const [
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
+                ]
+              : const [],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Text('🙏', style: TextStyle(fontSize: 28)),
+                Text(data.icon, style: const TextStyle(fontSize: 28)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'আগামী একাদশী',
-                        style: TextStyle(
-                          color: Color(0xFFFFE8A6),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
                       Text(
-                        '$paksha পক্ষের একাদশী',
+                        data.title,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 19,
+                          fontSize: 20,
                           fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        data.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFFFE8A6),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ],
                   ),
                 ),
-                Text(
-                  active ? 'LIVE' : 'NEXT',
-                  style: TextStyle(
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
                     color: active
-                        ? const Color(0xFF8CFFC1)
-                        : const Color(0xFFFFE8A6),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
+                        ? const Color(0x3326FF96)
+                        : const Color(0x22FFFFFF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: active
+                          ? const Color(0x668CFFC1)
+                          : const Color(0x33FFFFFF),
+                    ),
+                  ),
+                  child: Text(
+                    active ? 'LIVE' : 'NEXT',
+                    style: TextStyle(
+                      color: active
+                          ? const Color(0xFF8CFFC1)
+                          : const Color(0xFFFFE8A6),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
             Text(
-              '${PanchangCalculator.weekdayName(day)} • '
-              '${bnNum(day.day)} ${gregMonthBn(day.month)} ${bnNum(day.year)}',
+              '${PanchangCalculator.weekdayName(data.day)} • '
+              '${bnNum(data.day.day)} ${gregMonthBn(data.day.month)} '
+              '${bnNum(data.day.year)}',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
@@ -851,17 +1056,19 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
               children: [
                 Expanded(
                   child: _HomeEkadashiTimeBox(
-                    label: 'লাগবে',
+                    label: data.startLabel,
                     value:
-                        '${bnNum(start.day)} ${gregMonthBn(start.month)} • ${bnTime12(start)}',
+                        '${bnNum(data.start.day)} ${gregMonthBn(data.start.month)} • '
+                        '${bnTime12(data.start)}',
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _HomeEkadashiTimeBox(
-                    label: 'ছাড়বে',
+                    label: data.endLabel,
                     value:
-                        '${bnNum(end.day)} ${gregMonthBn(end.month)} • ${bnTime12(end)}',
+                        '${bnNum(data.end.day)} ${gregMonthBn(data.end.month)} • '
+                        '${bnTime12(data.end)}',
                   ),
                 ),
               ],
@@ -869,23 +1076,40 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
             const SizedBox(height: 10),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0x22FFFFFF),
+                color: active
+                    ? const Color(0x2D26FF96)
+                    : const Color(0x22FFFFFF),
                 borderRadius: BorderRadius.circular(12),
+                border: active
+                    ? Border.all(color: const Color(0x448CFFC1))
+                    : null,
               ),
-              child: Text(
-                '⏳ $countdown',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
+              child: Row(
+                children: [
+                  Text(
+                    active ? '⏱️' : '⏳',
+                    style: const TextStyle(fontSize: 17),
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      _statusText(data),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              '📍 $loc • live timing',
+              '📍 $loc • প্রতি সেকেন্ডে লাইভ আপডেট',
               style: const TextStyle(
                 color: Color(0xFFECE5F5),
                 fontSize: 11.5,
@@ -895,6 +1119,37 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
           ],
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = [
+      _ekadashi,
+      _ashtami,
+      _amavasya,
+      _purnima,
+      _upobash,
+    ].whereType<_LiveTithiData>().toList();
+
+    if (cards.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'তিথি ও উপবাস',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 10),
+        for (int i = 0; i < cards.length; i++) ...[
+          _buildLiveCard(cards[i]),
+          if (i != cards.length - 1) const SizedBox(height: 12),
+        ],
+      ],
     );
   }
 }
@@ -944,3 +1199,4 @@ class _HomeEkadashiTimeBox extends StatelessWidget {
     );
   }
 }
+
