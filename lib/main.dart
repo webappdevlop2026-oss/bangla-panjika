@@ -16,6 +16,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:in_app_review/in_app_review.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -2132,6 +2133,182 @@ class _AdminMaintenanceScreen extends StatelessWidget {
   }
 }
 
+
+class MandatoryUpdateGate extends StatefulWidget {
+  const MandatoryUpdateGate({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<MandatoryUpdateGate> createState() => _MandatoryUpdateGateState();
+}
+
+class _MandatoryUpdateGateState extends State<MandatoryUpdateGate> {
+  bool _checking = true;
+  bool _mustUpdate = false;
+  bool _updating = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (kIsWeb || !defaultTargetPlatform.isAndroid) {
+      if (mounted) setState(() => _checking = false);
+      return;
+    }
+
+    setState(() {
+      _checking = true;
+      _error = null;
+    });
+
+    try {
+      final info = await InAppUpdate.checkForUpdate();
+      final available =
+          info.updateAvailability == UpdateAvailability.updateAvailable;
+
+      if (!mounted) return;
+
+      if (!available) {
+        setState(() {
+          _checking = false;
+          _mustUpdate = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _checking = false;
+        _mustUpdate = true;
+      });
+
+      // Immediate update user-কে app-এর ভেতরে ঢুকতে দেয় না যতক্ষণ না
+      // Play Store update flow শেষ হয়।
+      if (info.immediateUpdateAllowed) {
+        await _startImmediateUpdate();
+      }
+    } catch (_) {
+      // Debug/sideload build, Play Store unavailable, বা network সমস্যা হলে
+      // app-কে ভুল করে lock করে রাখব না।
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _mustUpdate = false;
+      });
+    }
+  }
+
+  Future<void> _startImmediateUpdate() async {
+    if (_updating) return;
+
+    setState(() {
+      _updating = true;
+      _error = null;
+    });
+
+    try {
+      await InAppUpdate.performImmediateUpdate();
+      if (!mounted) return;
+
+      // Update শেষ হলে Play সাধারণত app restart করে। যদি control ফেরত আসে,
+      // আবার check করে নিশ্চিত হই।
+      setState(() => _updating = false);
+      await _checkForUpdate();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _updating = false;
+        _mustUpdate = true;
+        _error = 'আপডেট সম্পূর্ণ হয়নি। আবার চেষ্টা করুন।';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checking) {
+      return const Material(
+        color: Colors.white,
+        child: SafeArea(
+          child: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
+
+    if (!_mustUpdate) return widget.child;
+
+    return Material(
+      color: Colors.white,
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.system_update_alt,
+                  size: 64,
+                  color: Color(0xFFB3261E),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'অ্যাপ আপডেট করা প্রয়োজন',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'এই অ্যাপ ব্যবহার চালিয়ে যেতে নতুন সংস্করণে আপডেট করুন।',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.5,
+                    color: Colors.black54,
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFB3261E),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: _updating ? null : _startImmediateUpdate,
+                  icon: _updating
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download),
+                  label: Text(_updating ? 'আপডেট হচ্ছে...' : 'এখনই আপডেট করুন'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class BanglaPanjikaApp extends StatelessWidget {
   const BanglaPanjikaApp({super.key});
 
@@ -2165,23 +2342,25 @@ class BanglaPanjikaApp extends StatelessWidget {
         builder: (context, child) {
           final mq = MediaQuery.of(context);
 
-          return AnimatedBuilder(
-            animation: AdminRemoteConfig.instance,
-            builder: (context, _) {
-              if (AdminRemoteConfig.instance.maintenanceMode) {
-                return const _AdminMaintenanceScreen();
-              }
+          return MandatoryUpdateGate(
+            child: AnimatedBuilder(
+              animation: AdminRemoteConfig.instance,
+              builder: (context, _) {
+                if (AdminRemoteConfig.instance.maintenanceMode) {
+                  return const _AdminMaintenanceScreen();
+                }
 
-              return MediaQuery(
-                data: mq.copyWith(
-                  textScaler: mq.textScaler.clamp(
-                    minScaleFactor: Phase14Prefs.elderMode ? 1.50 : 1.32,
-                    maxScaleFactor: Phase14Prefs.elderMode ? 1.90 : 1.65,
+                return MediaQuery(
+                  data: mq.copyWith(
+                    textScaler: mq.textScaler.clamp(
+                      minScaleFactor: Phase14Prefs.elderMode ? 1.50 : 1.32,
+                      maxScaleFactor: Phase14Prefs.elderMode ? 1.90 : 1.65,
+                    ),
                   ),
-                ),
-                child: child!,
-              );
-            },
+                  child: child!,
+                );
+              },
+            ),
           );
         },
         initialRoute: '/splash',
