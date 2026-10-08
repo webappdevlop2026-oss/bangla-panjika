@@ -154,7 +154,7 @@ class _EasyBengaliCalendarScreenState
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(2),
                 border: Border.all(
                   color: const Color(0xFFE4DDD3),
                   width: 1,
@@ -167,16 +167,16 @@ class _EasyBengaliCalendarScreenState
                   ),
                 ],
               ),
-              clipBehavior: Clip.antiAlias,
+              clipBehavior: Clip.hardEdge,
               child: GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.72,
-                  crossAxisSpacing: 2,
-                  mainAxisSpacing: 2,
+                  childAspectRatio: 0.62,
+                  crossAxisSpacing: 0,
+                  mainAxisSpacing: 0,
                 ),
                 itemBuilder: (context, index) {
                   if (index < leading || index >= leading + totalDays) {
@@ -359,34 +359,29 @@ class _EasyBengaliCalendarScreenState
   Widget _buildWeekHeader() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7EA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4D5C0)),
+        color: const Color(0xFFF4F4F4),
+        border: Border.all(color: const Color(0xFFC9C9C9)),
       ),
-      clipBehavior: Clip.antiAlias,
       child: Row(
         children: List.generate(_weekdays.length, (i) {
           return Expanded(
             child: Container(
-              height: 38,
+              height: 42,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: i == 0
-                    ? const Color(0xFFFFE6E6)
-                    : Colors.transparent,
                 border: i == 6
                     ? null
                     : const Border(
-                        right: BorderSide(color: Color(0xFFE8DED1)),
+                        right: BorderSide(color: Color(0xFFCECECE)),
                       ),
               ),
               child: Text(
                 _weekdays[i],
                 style: TextStyle(
                   color: i == 0
-                      ? const Color(0xFFB31515)
-                      : const Color(0xFF3E3A35),
-                  fontSize: 12.5,
+                      ? const Color(0xFFD52B2B)
+                      : const Color(0xFF0069A8),
+                  fontSize: 15,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -496,81 +491,42 @@ class _EasyBengaliCalendarScreenState
 
     final shortLabel = _shortCalendarLabel(tithi, events, filteredEvents);
     final isMajorFestival = _isMajorFestival(events);
-    final isSpecialTithi = tithi.name.contains('অমাবস্যা') ||
-        tithi.name.contains('পূর্ণিমা') ||
-        tithi.name.contains('একাদশী') ||
-        tithi.name.contains('অষ্টমী') ||
-        tithi.name.contains('নবমী') ||
-        tithi.name.contains('চতুর্দশী') ||
-        tithi.name.contains('সংক্রান্তি');
 
-    final background = isToday
-        ? const Color(0xFFFFF0C9)
-        : isMajorFestival
-            ? const Color(0xFFFFF0EC)
-            : Colors.white;
-
-    final border = isToday
-        ? const Color(0xFFE2A12B)
-        : isMajorFestival
-            ? const Color(0xFFE3A099)
-            : const Color(0xFFE7E2DB);
+    final mainColor = isSunday
+        ? const Color(0xFFD52B2B)
+        : const Color(0xFF0069A8);
 
     return InkWell(
-      borderRadius: BorderRadius.circular(10),
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+        padding: const EdgeInsets.fromLTRB(5, 5, 5, 5),
         decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(10),
+          color: isToday
+              ? const Color(0xFFFFF7D8)
+              : const Color(0xFFF2F2F2),
           border: Border.all(
-            color: border,
-            width: isToday ? 1.8 : 1,
+            color: isToday
+                ? const Color(0xFF5D9CC7)
+                : const Color(0xFFD0D0D0),
+            width: isToday ? 1.6 : .7,
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              height: 17,
-              child: Row(
-                children: [
-                  if (isToday)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF8B1515),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: const Text(
-                        'আজ',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 7.5,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    )
-                  else
-                    const SizedBox(width: 1),
-                  const Spacer(),
-                  Text(
-                    '${bnNum(greg.day)}',
-                    style: TextStyle(
-                      color: isSunday
-                          ? const Color(0xFFBF1515)
-                          : const Color(0xFF6A655F),
-                      fontSize: 8.8,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
+            Align(
+              alignment: Alignment.topLeft,
+              child: Text(
+                bnNum(greg.day),
+                style: TextStyle(
+                  color: mainColor,
+                  fontSize: 11.5,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
+            const SizedBox(height: 4),
             Expanded(
               child: Center(
                 child: FittedBox(
@@ -579,46 +535,33 @@ class _EasyBengaliCalendarScreenState
                     bnNum(bengaliDay),
                     maxLines: 1,
                     style: TextStyle(
-                      color: isSunday || isToday || isMajorFestival
-                          ? const Color(0xFFB31313)
-                          : const Color(0xFF222222),
-                      fontSize: 40,
-                      height: .98,
+                      color: mainColor,
+                      fontSize: 43,
+                      height: .95,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
               ),
             ),
-            Container(
-              constraints: const BoxConstraints(minHeight: 23),
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
-              decoration: BoxDecoration(
-                color: isMajorFestival
-                    ? const Color(0xFFFFDDD7)
-                    : isSpecialTithi
-                        ? const Color(0xFFF1EAF6)
-                        : const Color(0xFFF5F3EF),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                shortLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: isMajorFestival
-                      ? const Color(0xFF991313)
-                      : isSpecialTithi
-                          ? const Color(0xFF50316B)
-                          : const Color(0xFF4B4742),
-                  fontSize: isMajorFestival ? 9.4 : 9.0,
-                  height: 1.08,
-                  fontWeight: FontWeight.w900,
+            if (isMajorFestival || shortLabel.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  shortLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: isMajorFestival
+                        ? const Color(0xFFD52B2B)
+                        : const Color(0xFF0069A8),
+                    fontSize: 10.5,
+                    height: 1.05,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
