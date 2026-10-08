@@ -1629,31 +1629,19 @@ class _DurgaFestivalLiveCardState extends State<DurgaFestivalLiveCard>
         : '${item.event.label} শুরু হতে ${_countdown(item.start.difference(_now))}';
 
     Widget drum(bool left) {
-      final dhaki = Image.memory(
-        base64Decode(_dhakiSideImageBase64),
-        width: 54,
-        height: 94,
-        fit: BoxFit.contain,
-        gaplessPlayback: true,
-      );
-
       return AnimatedBuilder(
         animation: _dhak,
         builder: (_, __) {
-          final turn = (_dhak.value - .5) * .05 * (left ? -1 : 1);
-          final scale = .98 + (_dhak.value * .04);
-          final image = left
-              ? dhaki
-              : Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.diagonal3Values(-1, 1, 1),
-                  child: dhaki,
-                );
+          final turn = (_dhak.value - .5) * .045 * (left ? -1 : 1);
+          final scale = .98 + (_dhak.value * .035);
           return Transform.rotate(
             angle: turn,
             child: Transform.scale(
               scale: scale,
-              child: image,
+              child: CustomPaint(
+                size: const Size(58, 100),
+                painter: _DhakiPersonPainter(mirrored: !left),
+              ),
             ),
           );
         },
@@ -1795,7 +1783,203 @@ class _DurgaFestivalLiveCardState extends State<DurgaFestivalLiveCard>
 }
 
 
-const String _dhakiSideImageBase64 = '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';
+
+
+class _DhakiPersonPainter extends CustomPainter {
+  final bool mirrored;
+
+  const _DhakiPersonPainter({required this.mirrored});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    if (mirrored) {
+      canvas.translate(size.width, 0);
+      canvas.scale(-1, 1);
+    }
+
+    double x(double v) => size.width * v;
+    double y(double v) => size.height * v;
+
+    final skin = Paint()..color = const Color(0xFFF2A07E);
+    final white = Paint()..color = const Color(0xFFFFFBF1);
+    final clothShade = Paint()..color = const Color(0xFFE6E2DD);
+    final red = Paint()..color = const Color(0xFFCC1E16);
+    final orange = Paint()..color = const Color(0xFFD86712);
+    final orangeDark = Paint()..color = const Color(0xFF8D3E0B);
+    final black = Paint()..color = const Color(0xFF0C0C0C);
+    final feather = Paint()..color = const Color(0xFFF8F8F4);
+    final featherDark = Paint()..color = const Color(0xFF3A2A20);
+    final line = Paint()
+      ..color = const Color(0xFF7A3214)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * .022
+      ..strokeCap = StrokeCap.round;
+    final rope = Paint()
+      ..color = const Color(0xFFF0C66A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * .018;
+
+    // White plume with dark base, like the supplied Bengali dhaki reference.
+    final plume = Path()
+      ..moveTo(x(.42), y(.06))
+      ..quadraticBezierTo(x(.62), y(-.01), x(.77), y(.05))
+      ..quadraticBezierTo(x(.86), y(.11), x(.78), y(.22))
+      ..quadraticBezierTo(x(.66), y(.14), x(.54), y(.18))
+      ..quadraticBezierTo(x(.48), y(.12), x(.42), y(.06))
+      ..close();
+    canvas.drawPath(plume, feather);
+    final plumeBase = Path()
+      ..moveTo(x(.40), y(.07))
+      ..quadraticBezierTo(x(.34), y(.13), x(.50), y(.17))
+      ..lineTo(x(.57), y(.12))
+      ..quadraticBezierTo(x(.48), y(.06), x(.40), y(.07))
+      ..close();
+    canvas.drawPath(plumeBase, featherDark);
+
+    // Dhak behind the performer.
+    final drumBody = Path()
+      ..moveTo(x(.58), y(.25))
+      ..quadraticBezierTo(x(.86), y(.20), x(.93), y(.45))
+      ..quadraticBezierTo(x(.96), y(.62), x(.74), y(.70))
+      ..quadraticBezierTo(x(.60), y(.64), x(.56), y(.45))
+      ..close();
+    canvas.drawPath(drumBody, orange);
+    canvas.drawPath(drumBody, Paint()
+      ..color = orangeDark.color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * .025);
+    for (int i = 0; i < 4; i++) {
+      final xx = .64 + (i * .07);
+      canvas.drawLine(Offset(x(xx), y(.29)), Offset(x(xx + .04), y(.62)), rope);
+    }
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(.76), y(.66)),
+        width: x(.34),
+        height: y(.11),
+      ),
+      Paint()..color = const Color(0xFFF3E4C7),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(.76), y(.66)),
+        width: x(.34),
+        height: y(.11),
+      ),
+      Paint()
+        ..color = const Color(0xFF8F4A28)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * .022,
+    );
+
+    // Head and hair.
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(.33), y(.24)),
+        width: x(.22),
+        height: y(.16),
+      ),
+      skin,
+    );
+    final hair = Path()
+      ..moveTo(x(.22), y(.22))
+      ..quadraticBezierTo(x(.24), y(.13), x(.39), y(.15))
+      ..quadraticBezierTo(x(.45), y(.18), x(.42), y(.23))
+      ..lineTo(x(.31), y(.20))
+      ..close();
+    canvas.drawPath(hair, black);
+
+    // Kurta.
+    final torso = Path()
+      ..moveTo(x(.22), y(.31))
+      ..lineTo(x(.46), y(.30))
+      ..quadraticBezierTo(x(.55), y(.48), x(.48), y(.64))
+      ..lineTo(x(.22), y(.69))
+      ..quadraticBezierTo(x(.11), y(.52), x(.18), y(.36))
+      ..close();
+    canvas.drawPath(torso, white);
+
+    // Red shoulder strap to the dhak.
+    canvas.drawPath(
+      Path()
+        ..moveTo(x(.39), y(.30))
+        ..lineTo(x(.48), y(.31))
+        ..lineTo(x(.66), y(.55))
+        ..lineTo(x(.60), y(.58))
+        ..close(),
+      red,
+    );
+
+    // Dhoti.
+    final dhoti = Path()
+      ..moveTo(x(.24), y(.65))
+      ..lineTo(x(.47), y(.64))
+      ..lineTo(x(.51), y(.90))
+      ..lineTo(x(.40), y(.95))
+      ..lineTo(x(.34), y(.78))
+      ..lineTo(x(.27), y(.95))
+      ..lineTo(x(.17), y(.91))
+      ..close();
+    canvas.drawPath(dhoti, white);
+    canvas.drawPath(
+      Path()
+        ..moveTo(x(.20), y(.88))
+        ..lineTo(x(.28), y(.91))
+        ..moveTo(x(.42), y(.90))
+        ..lineTo(x(.49), y(.88)),
+      Paint()
+        ..color = red.color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * .025,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(x(.31), y(.66))
+        ..quadraticBezierTo(x(.36), y(.75), x(.39), y(.86)),
+      Paint()
+        ..color = clothShade.color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = size.width * .04,
+    );
+
+    // Arms and crossed drum sticks.
+    canvas.drawLine(Offset(x(.20), y(.43)), Offset(x(.37), y(.57)), Paint()
+      ..color = skin.color
+      ..strokeWidth = size.width * .08
+      ..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(x(.46), y(.42)), Offset(x(.38), y(.57)), Paint()
+      ..color = skin.color
+      ..strokeWidth = size.width * .08
+      ..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(x(.30), y(.55)), Offset(x(.61), y(.67)), line);
+    canvas.drawLine(Offset(x(.37), y(.57)), Offset(x(.63), y(.53)), line);
+
+    // Feet.
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(.22), y(.965)),
+        width: x(.13),
+        height: y(.04),
+      ),
+      skin,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(x(.43), y(.965)),
+        width: x(.13),
+        height: y(.04),
+      ),
+      skin,
+    );
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _DhakiPersonPainter oldDelegate) =>
+      oldDelegate.mirrored != mirrored;
+}
 
 class _DhakPainter extends CustomPainter {
   final bool mirrored;
