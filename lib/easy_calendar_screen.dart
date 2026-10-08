@@ -159,7 +159,7 @@ class _EasyBengaliCalendarScreenState
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.72,
+                  childAspectRatio: 0.66,
                   crossAxisSpacing: 2,
                   mainAxisSpacing: 2,
                 ),
@@ -442,7 +442,7 @@ class _EasyBengaliCalendarScreenState
     final dayTile = InkWell(
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(2, 2, 2, 3),
+        padding: const EdgeInsets.fromLTRB(2, 1.5, 2, 2),
         decoration: BoxDecoration(
           color: isToday
               ? const Color(0xFFFFE6B8)
@@ -463,7 +463,7 @@ class _EasyBengaliCalendarScreenState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
-              height: 16,
+              height: 14,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -479,12 +479,14 @@ class _EasyBengaliCalendarScreenState
                     ),
                   ),
                   Text(
-                    '${greg.day}/${greg.month}',
+                    isToday ? 'আজ • ${greg.day}/${greg.month}' : '${greg.day}/${greg.month}',
                     maxLines: 1,
-                    style: const TextStyle(
-                      color: Color(0xFF756A60),
-                      fontSize: 7.6,
-                      fontWeight: FontWeight.w800,
+                    style: TextStyle(
+                      color: isToday
+                          ? const Color(0xFF8E1111)
+                          : const Color(0xFF756A60),
+                      fontSize: 7.4,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ],
@@ -502,7 +504,7 @@ class _EasyBengaliCalendarScreenState
                       color: isToday || isSunday || isMajorFestival
                           ? const Color(0xFFC01818)
                           : const Color(0xFF2E2045),
-                      fontSize: 34,
+                      fontSize: 31,
                       height: .95,
                       fontWeight: FontWeight.w900,
                     ),
@@ -512,8 +514,8 @@ class _EasyBengaliCalendarScreenState
             ),
             const SizedBox(height: 1),
             Container(
-              constraints: const BoxConstraints(minHeight: 19),
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+              constraints: const BoxConstraints(minHeight: 17),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
               decoration: BoxDecoration(
                 color: isMajorFestival
                     ? const Color(0xFFFFDAD2)
@@ -539,32 +541,14 @@ class _EasyBengaliCalendarScreenState
                       : isSpecialTithi
                           ? const Color(0xFF4E2A6D)
                           : const Color(0xFF4E463F),
-                  fontSize: isMajorFestival ? 8.1 : 7.8,
+                  fontSize: isMajorFestival ? 7.8 : 7.5,
                   height: 1.0,
                   fontWeight:
                       isMajorFestival ? FontWeight.w900 : FontWeight.w800,
                 ),
               ),
             ),
-            if (isToday) ...[
-              const SizedBox(height: 2),
-              Container(
-                height: 13,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8E1111),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'আজ',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 7.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
+
           ],
         ),
       ),
