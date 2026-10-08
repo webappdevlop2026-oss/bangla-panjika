@@ -414,6 +414,33 @@ class _EasyBengaliCalendarScreenState
     return name;
   }
 
+  String _majorFestivalIcon(List<CalendarEvent> events) {
+    for (final e in events) {
+      final label = e.label;
+      if (label.contains('মহালয়া') || label.contains('মহালয়া')) return '👁️';
+      if (label.contains('মহাষষ্ঠী') ||
+          label.contains('মহাসপ্তমী') ||
+          label.contains('মহাষ্টমী') ||
+          label.contains('মহানবমী') ||
+          label.contains('বিজয়া দশমী') ||
+          label.contains('বিজয়া দশমী') ||
+          label.contains('দুর্গা')) {
+        return '🪔';
+      }
+      if (label.contains('লক্ষ্মী')) return '🪷';
+      if (label.contains('কালী') || label.contains('দীপাবলি')) return '🪔';
+      if (label.contains('সরস্বতী')) return '📖';
+      if (label.contains('জন্মাষ্টমী')) return '🦚';
+      if (label.contains('শিবরাত্রি')) return '🔱';
+      if (label.contains('গণেশ')) return '🐘';
+      if (label.contains('জগদ্ধাত্রী')) return '🦁';
+      if (label.contains('রথ')) return '🛕';
+      if (label.contains('ছট')) return '🌅';
+      if (e.icon.trim().isNotEmpty) return e.icon;
+    }
+    return '🌺';
+  }
+
   Widget _dayCell(DateTime greg, int bengaliDay, dynamic info) {
     final now = DateTime.now();
     final isToday = greg.year == now.year &&
@@ -464,21 +491,41 @@ class _EasyBengaliCalendarScreenState
             ),
             const SizedBox(height: 4),
             Expanded(
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    bnNum(bengaliDay),
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: mainColor,
-                      fontSize: 43,
-                      height: .95,
-                      fontWeight: FontWeight.w900,
+              child: isMajorFestival
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _majorFestivalIcon(events),
+                          style: const TextStyle(fontSize: 27),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          bnNum(bengaliDay),
+                          style: TextStyle(
+                            color: mainColor,
+                            fontSize: 25,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          bnNum(bengaliDay),
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: mainColor,
+                            fontSize: 43,
+                            height: .95,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ),
             ),
             if (isMajorFestival || shortLabel.isNotEmpty)
               Padding(
