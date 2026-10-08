@@ -5,6 +5,7 @@ import 'dart:typed_data' show Uint8List;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/services.dart'
@@ -48,6 +49,7 @@ Future<void> main() async {
   // বাকিটা প্রথম ফ্রেম আঁকা হয়ে যাওয়ার পর — ব্যবহারকারী তখন অ্যাপ
   // দেখতে পাচ্ছেন, এগুলো পেছনে চুপচাপ হয়ে যায়।
   WidgetsBinding.instance.addPostFrameCallback((_) async {
+    unawaited(DurgaFestivalSeason.playLaunchDhakIfActive());
     unawaited(AdminRemoteConfig.instance.load());
     unawaited(AdService.instance.init());
     try {
@@ -4680,6 +4682,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
         const SizedBox(height: 14),
         _TickerBar(),
         const SizedBox(height: 14),
+        const DurgaFestivalLiveCard(),
         const HomeEkadashiCard(),
         const SizedBox(height: 10),
         const AdBannerWidget(),
@@ -4833,6 +4836,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
               const SizedBox(height: 12),
               _TickerBar(),
               const SizedBox(height: 14),
+              const DurgaFestivalLiveCard(),
               const HomeEkadashiCard(),
               const SizedBox(height: 10),
               const AdBannerWidget(),
