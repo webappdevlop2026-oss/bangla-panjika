@@ -186,6 +186,8 @@ class _EasyBengaliCalendarScreenState
                 fontWeight: FontWeight.w700,
               ),
             ),
+            const SizedBox(height: 16),
+            const MoonJourneyCard(),
           ],
         ),
       ),
@@ -851,6 +853,336 @@ class _MonthlyAuspiciousTickerState extends State<_MonthlyAuspiciousTicker> {
                   ),
                 );
               }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+
+class MoonJourneyCard extends StatefulWidget {
+  const MoonJourneyCard({super.key});
+
+  @override
+  State<MoonJourneyCard> createState() => _MoonJourneyCardState();
+}
+
+class _MoonJourneyCardState extends State<MoonJourneyCard> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  ({DateTime day, DateTime start})? _nextEvent(String category) {
+    final base = DateTime(_now.year, _now.month, _now.day);
+    for (int i = 0; i <= 70; i++) {
+      final day = base.add(Duration(days: i));
+      final hasEvent = BengaliCalendarData.eventsFor(day)
+          .any((e) => e.category == category);
+      if (!hasEvent) continue;
+
+      try {
+        final sunrise = PanchangCalculator.sunTimes(day).sunrise;
+        final timing = PanchangCalculator.tithiTiming(sunrise);
+        var start = timing.$1;
+
+        // If today's exact tithi start is already over, it is still useful
+        // while the tithi is active; otherwise move to the next occurrence.
+        if (i == 0 && timing.$2.isBefore(_now)) continue;
+        if (start.isBefore(_now) && timing.$2.isAfter(_now)) {
+          start = _now;
+        }
+        return (day: day, start: start);
+      } catch (_) {
+        return (day: day, start: day);
+      }
+    }
+    return null;
+  }
+
+  String _countdown(DateTime target) {
+    var d = target.difference(_now);
+    if (d.isNegative) d = Duration.zero;
+    final days = d.inDays;
+    final hours = d.inHours % 24;
+    final minutes = d.inMinutes % 60;
+    final seconds = d.inSeconds % 60;
+
+    if (days > 0) {
+      return '${bnNum(days)} দিন ${bnNum(hours)} ঘ '
+          '${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+    }
+    return '${bnNum(hours)} ঘ ${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+  }
+
+  String _dateText(DateTime d) {
+    return '${bnNum(d.day)} ${gregMonthBn(d.month)} ${bnNum(d.year)}';
+  }
+
+  String _phaseName(double illumination, bool waxing) {
+    if (illumination < 0.04) return 'অমাবস্যার কাছাকাছি';
+    if (illumination > 0.96) return 'পূর্ণিমার কাছাকাছি';
+    if (waxing) {
+      if (illumination < 0.48) return 'বাড়ন্ত চাঁদ';
+      return 'পূর্ণিমার পথে';
+    }
+    if (illumination > 0.52) return 'ক্ষয়িষ্ণু চাঁদ';
+    return 'অমাবস্যার পথে';
+  }
+
+  String _moonSymbol(double illumination, bool waxing) {
+    if (illumination < 0.04) return '🌑';
+    if (illumination > 0.96) return '🌕';
+    if (waxing) {
+      return illumination < 0.50 ? '🌒' : '🌔';
+    }
+    return illumination > 0.50 ? '🌖' : '🌘';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sky = SkyPhase.forTime(_now);
+    final illumination = sky.moonIllumination.clamp(0.0, 1.0);
+    final waxing = sky.moonWaxing;
+    final fullMoon = _nextEvent('purnima');
+    final newMoon = _nextEvent('amabasya');
+    final percent = (illumination * 100).round();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF10182F),
+            Color(0xFF1E2850),
+            Color(0xFF321F4B),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x557C8DFF)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x26000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Text('🌙', style: TextStyle(fontSize: 23)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'চাঁদের যাত্রা',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Text(
+                'LIVE',
+                style: TextStyle(
+                  color: Color(0xFF9CF2C8),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                width: 76,
+                height: 76,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF090D1C),
+                  border: Border.all(color: const Color(0x668CA2FF)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFB8C8FF)
+                          .withValues(alpha: 0.18 + illumination * 0.20),
+                      blurRadius: 22,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Text(
+                  _moonSymbol(illumination, waxing),
+                  style: const TextStyle(fontSize: 50),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _phaseName(illumination, waxing),
+                      style: const TextStyle(
+                        color: Color(0xFFFFE7A6),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'চাঁদের আলো প্রায় ${bnNum(percent)}%',
+                      style: const TextStyle(
+                        color: Color(0xFFE4E8FF),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: LinearProgressIndicator(
+                        minHeight: 7,
+                        value: illumination,
+                        backgroundColor: const Color(0x332D3766),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFFFFE49A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      waxing ? 'শুক্লপক্ষ • আলো বাড়ছে' : 'কৃষ্ণপক্ষ • আলো কমছে',
+                      style: const TextStyle(
+                        color: Color(0xFFAFB9DE),
+                        fontSize: 10.8,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          Row(
+            children: [
+              Expanded(
+                child: _MoonJourneyEventBox(
+                  icon: '🌕',
+                  title: 'পরের পূর্ণিমা',
+                  date: fullMoon == null ? 'তথ্য নেই' : _dateText(fullMoon.day),
+                  countdown: fullMoon == null
+                      ? ''
+                      : _countdown(fullMoon.start),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: _MoonJourneyEventBox(
+                  icon: '🌑',
+                  title: 'পরের অমাবস্যা',
+                  date: newMoon == null ? 'তথ্য নেই' : _dateText(newMoon.day),
+                  countdown: newMoon == null
+                      ? ''
+                      : _countdown(newMoon.start),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          const Text(
+            'চাঁদের দশা ও পরবর্তী পূর্ণিমা–অমাবস্যা পঞ্জিকার বর্তমান হিসাব অনুযায়ী স্বয়ংক্রিয়ভাবে বদলায়।',
+            style: TextStyle(
+              color: Color(0xFF9FA8CB),
+              fontSize: 10.3,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoonJourneyEventBox extends StatelessWidget {
+  final String icon;
+  final String title;
+  final String date;
+  final String countdown;
+
+  const _MoonJourneyEventBox({
+    required this.icon,
+    required this.title,
+    required this.date,
+    required this.countdown,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 102),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
+      decoration: BoxDecoration(
+        color: const Color(0x1FFFFFFF),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0x33FFFFFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$icon $title',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            date,
+            style: const TextStyle(
+              color: Color(0xFFFFE7A6),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (countdown.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              countdown,
+              maxLines: 2,
+              style: const TextStyle(
+                color: Color(0xFFB9C6F5),
+                fontSize: 10.2,
+                height: 1.25,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
         ],
