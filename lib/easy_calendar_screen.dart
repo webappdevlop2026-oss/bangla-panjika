@@ -1632,13 +1632,16 @@ class _DurgaFestivalLiveCardState extends State<DurgaFestivalLiveCard>
       return AnimatedBuilder(
         animation: _dhak,
         builder: (_, __) {
-          final turn = (_dhak.value - .5) * .06 * (left ? -1 : 1);
-          final scale = .96 + (_dhak.value * .07);
+          final turn = (_dhak.value - .5) * .08 * (left ? -1 : 1);
+          final scale = .96 + (_dhak.value * .06);
           return Transform.rotate(
             angle: turn,
             child: Transform.scale(
               scale: scale,
-              child: const Text('🥁', style: TextStyle(fontSize: 34)),
+              child: CustomPaint(
+                size: const Size(46, 52),
+                painter: _DhakPainter(mirrored: !left),
+              ),
             ),
           );
         },
@@ -1777,4 +1780,134 @@ class _DurgaFestivalLiveCardState extends State<DurgaFestivalLiveCard>
       ),
     );
   }
+}
+
+
+class _DhakPainter extends CustomPainter {
+  final bool mirrored;
+
+  const _DhakPainter({required this.mirrored});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    if (mirrored) {
+      canvas.translate(size.width, 0);
+      canvas.scale(-1, 1);
+    }
+
+    final body = Paint()
+      ..color = const Color(0xFFB86A22)
+      ..style = PaintingStyle.fill;
+
+    final dark = Paint()
+      ..color = const Color(0xFF5B2A12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2;
+
+    final rim = Paint()
+      ..color = const Color(0xFFF4D27A)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4;
+
+    final rope = Paint()
+      ..color = const Color(0xFFF2C45D)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final stick = Paint()
+      ..color = const Color(0xFF8A4B24)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round;
+
+    // Traditional Bengali dhak body: tall, slightly tapered barrel.
+    final bodyPath = Path()
+      ..moveTo(size.width * .28, size.height * .18)
+      ..quadraticBezierTo(
+        size.width * .15,
+        size.height * .50,
+        size.width * .28,
+        size.height * .82,
+      )
+      ..quadraticBezierTo(
+        size.width * .50,
+        size.height * .92,
+        size.width * .72,
+        size.height * .82,
+      )
+      ..quadraticBezierTo(
+        size.width * .85,
+        size.height * .50,
+        size.width * .72,
+        size.height * .18,
+      )
+      ..quadraticBezierTo(
+        size.width * .50,
+        size.height * .08,
+        size.width * .28,
+        size.height * .18,
+      )
+      ..close();
+
+    canvas.drawPath(bodyPath, body);
+    canvas.drawPath(bodyPath, dark);
+
+    // Top and bottom drum heads.
+    final topRect = Rect.fromCenter(
+      center: Offset(size.width * .50, size.height * .18),
+      width: size.width * .46,
+      height: size.height * .16,
+    );
+    final bottomRect = Rect.fromCenter(
+      center: Offset(size.width * .50, size.height * .82),
+      width: size.width * .46,
+      height: size.height * .16,
+    );
+    canvas.drawOval(topRect, rim);
+    canvas.drawOval(bottomRect, rim);
+
+    // Traditional lacing around the dhak body.
+    for (int i = 0; i < 5; i++) {
+      final x1 = size.width * (.31 + i * .095);
+      final x2 = size.width * (.69 - i * .095);
+      canvas.drawLine(
+        Offset(x1, size.height * .22),
+        Offset(x2, size.height * .78),
+        rope,
+      );
+    }
+
+    // Shoulder strap.
+    final strap = Paint()
+      ..color = const Color(0xFFD8B45E)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    final strapPath = Path()
+      ..moveTo(size.width * .30, size.height * .22)
+      ..quadraticBezierTo(
+        size.width * .02,
+        size.height * .08,
+        size.width * .08,
+        size.height * .66,
+      );
+    canvas.drawPath(strapPath, strap);
+
+    // Curved dhak stick.
+    final stickPath = Path()
+      ..moveTo(size.width * .80, size.height * .12)
+      ..quadraticBezierTo(
+        size.width * .98,
+        size.height * .28,
+        size.width * .83,
+        size.height * .47,
+      );
+    canvas.drawPath(stickPath, stick);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _DhakPainter oldDelegate) =>
+      oldDelegate.mirrored != mirrored;
 }
