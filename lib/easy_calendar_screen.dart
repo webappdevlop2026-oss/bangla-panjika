@@ -1163,10 +1163,7 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PanchangOccasionDetailScreen(
-            date: data.day,
-            event: data.event,
-          ),
+          builder: (_) => LiveTithiDetailScreen(data: data),
         ),
       ),
       child: Container(
@@ -1377,6 +1374,273 @@ class _HomeEkadashiCardState extends State<HomeEkadashiCard> {
         const SizedBox(height: 10),
         _buildLiveCard(current),
       ],
+    );
+  }
+}
+
+
+class LiveTithiDetailScreen extends StatefulWidget {
+  final _LiveTithiData data;
+
+  const LiveTithiDetailScreen({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<LiveTithiDetailScreen> createState() => _LiveTithiDetailScreenState();
+}
+
+class _LiveTithiDetailScreenState extends State<LiveTithiDetailScreen> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _countdown(Duration d) {
+    if (d.isNegative) d = Duration.zero;
+    final total = d.inSeconds;
+    final days = total ~/ 86400;
+    final hours = (total % 86400) ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final seconds = total % 60;
+
+    if (days > 0) {
+      return '${bnNum(days)} দিন ${bnNum(hours)} ঘ '
+          '${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+    }
+    return '${bnNum(hours)} ঘ ${bnNum(minutes)} মি ${bnNum(seconds)} সে';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.data;
+    final isBefore = _now.isBefore(data.start);
+    final isLive = !isBefore && _now.isBefore(data.end);
+    final tithi = PanchangCalculator.tithiFor(data.day);
+    final eventText = data.event?.label.trim();
+    final loc = LocationService.instance.hasGps
+        ? 'GPS Live'
+        : '${AppLocation.district} • জেলা';
+
+    final statusText = isBefore
+        ? 'শুরু হতে ${_countdown(data.start.difference(_now))}'
+        : isLive
+            ? 'শেষ হতে ${_countdown(data.end.difference(_now))}'
+            : 'এই তিথি শেষ হয়েছে';
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F4EE),
+      appBar: AppBar(
+        backgroundColor: data.colors.first,
+        foregroundColor: Colors.white,
+        title: Text(
+          data.title,
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 28),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: data.colors,
+              ),
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Text(data.icon, style: const TextStyle(fontSize: 48)),
+                const SizedBox(height: 8),
+                Text(
+                  data.title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 27,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  eventText != null && eventText.isNotEmpty
+                      ? eventText
+                      : data.subtitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFFFE8A6),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isLive
+                        ? const Color(0x3326FF96)
+                        : const Color(0x22FFFFFF),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isLive
+                          ? const Color(0x668CFFC1)
+                          : const Color(0x33FFFFFF),
+                    ),
+                  ),
+                  child: Text(
+                    isLive ? '🔴 LIVE • $statusText' : '⏳ $statusText',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          _LiveDetailInfoCard(
+            title: 'তারিখ',
+            value:
+                '${PanchangCalculator.weekdayName(data.day)} • '
+                '${bnNum(data.day.day)} ${gregMonthBn(data.day.month)} '
+                '${bnNum(data.day.year)}',
+            icon: '📅',
+          ),
+          const SizedBox(height: 10),
+          _LiveDetailInfoCard(
+            title: data.startLabel,
+            value:
+                '${bnNum(data.start.day)} ${gregMonthBn(data.start.month)} '
+                '• ${bnTime12(data.start)}',
+            icon: '▶️',
+          ),
+          const SizedBox(height: 10),
+          _LiveDetailInfoCard(
+            title: data.endLabel,
+            value:
+                '${bnNum(data.end.day)} ${gregMonthBn(data.end.month)} '
+                '• ${bnTime12(data.end)}',
+            icon: '⏹️',
+          ),
+          const SizedBox(height: 10),
+          _LiveDetailInfoCard(
+            title: 'তিথি',
+            value: '${tithi.paksha} পক্ষ • ${tithi.name}',
+            icon: '🌙',
+          ),
+          const SizedBox(height: 10),
+          _LiveDetailInfoCard(
+            title: 'স্থান',
+            value: loc,
+            icon: '📍',
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE5DDD4)),
+            ),
+            child: const Text(
+              'এই screen-এ উপরের LIVE field-এ বর্তমানে যে তিথি বা উপবাস '
+              'দেখানো হচ্ছে, শুধু সেই সম্পর্কিত তথ্যই দেখানো হবে।',
+              style: TextStyle(
+                color: Color(0xFF5F554B),
+                fontSize: 12.5,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveDetailInfoCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String icon;
+
+  const _LiveDetailInfoCard({
+    required this.title,
+    required this.value,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFE5DDD4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 21)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF8A6A48),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Color(0xFF2D2925),
+                    fontSize: 15,
+                    height: 1.25,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
