@@ -1468,8 +1468,10 @@ class DurgaFestivalSeason {
     AudioPlayer? player;
     try {
       player = AudioPlayer();
-      await player.setVolume(.88);
-      await player.play(BytesSource(_buildDhakWav()));
+      await player.setVolume(1.0);
+      final wav = _buildDhakWav();
+      await player.setSourceBytes(wav, mimeType: 'audio/wav');
+      await player.resume();
       await Future<void>.delayed(const Duration(seconds: 5));
       await player.stop();
     } catch (_) {
