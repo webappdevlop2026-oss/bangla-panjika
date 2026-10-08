@@ -14275,6 +14275,7 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
   String _festivalHint = '';
   String _seasonName = 'বাংলা ঋতু';
   String _tithiLabel = '';
+  bool _durgaIdolVisible = false;
   int _hour = DateTime.now().hour;
 
   @override
@@ -14374,6 +14375,7 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
     );
 
     String festival = '';
+    bool durgaIdolVisible = false;
     try {
       final events = BengaliCalendarData.eventsFor(now);
       final festivalEvents = events
@@ -14382,6 +14384,20 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
       if (festivalEvents.isNotEmpty) {
         festival = festivalEvents.take(2).map((e) => e.label).join(' • ');
       }
+
+      durgaIdolVisible = events.any((e) {
+        final label = e.label;
+        return label.contains('মহাষষ্ঠী') ||
+            label.contains('ষষ্ঠী') ||
+            label.contains('মহাসপ্তমী') ||
+            label.contains('সপ্তমী') ||
+            label.contains('মহাষ্টমী') ||
+            label.contains('অষ্টমী') ||
+            label.contains('মহানবমী') ||
+            label.contains('নবমী') ||
+            label.contains('বিজয়া দশমী') ||
+            label.contains('বিজয়া দশমী');
+      });
     } catch (_) {}
 
     String season = 'বাংলা ঋতু';
@@ -14405,6 +14421,7 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
         _festivalHint = festival;
         _seasonName = season;
         _tithiLabel = tithi;
+        _durgaIdolVisible = durgaIdolVisible;
         _hour = now.hour;
       });
     }
@@ -14444,6 +14461,7 @@ class _VillageHorizonSceneState extends State<VillageHorizonScene>
                     sky: _sky,
                     seasonName: _seasonName,
                     festivalHint: _festivalHint,
+                    durgaIdolVisible: _durgaIdolVisible,
                     hour: _hour,
                   ),
                   size: Size.infinite,
@@ -14564,6 +14582,7 @@ class _VillageHorizonPainter extends CustomPainter {
     required this.sky,
     required this.seasonName,
     required this.festivalHint,
+    required this.durgaIdolVisible,
     required this.hour,
   });
 
@@ -14576,6 +14595,7 @@ class _VillageHorizonPainter extends CustomPainter {
   final SkyPhase sky;
   final String seasonName;
   final String festivalHint;
+  final bool durgaIdolVisible;
   final int hour;
 
   double get dayAmount => 1.0 - darkAmount;
@@ -15026,36 +15046,195 @@ class _VillageHorizonPainter extends CustomPainter {
     }
 
     void tinyTemple(double x, double baseY, double scale) {
-      final p = Paint()..color = silhouette;
-      canvas.drawRect(
+      final bodyColor = Color.lerp(
+        const Color(0xFFF0C56C),
+        const Color(0xFF352018),
+        darkAmount,
+      )!;
+      final roofColor = Color.lerp(
+        const Color(0xFFC8452D),
+        const Color(0xFF2C0D16),
+        darkAmount,
+      )!;
+      final trimColor = Color.lerp(
+        const Color(0xFFFFE09A),
+        const Color(0xFF75512E),
+        darkAmount,
+      )!;
+
+      final body = RRect.fromRectAndRadius(
         Rect.fromLTWH(
-          x - 9 * scale,
+          x - 15 * scale,
+          baseY - 25 * scale,
+          30 * scale,
+          25 * scale,
+        ),
+        Radius.circular(2.5 * scale),
+      );
+      canvas.drawRRect(body, Paint()..color = bodyColor);
+
+      final roof = Path()
+        ..moveTo(x - 19 * scale, baseY - 25 * scale)
+        ..lineTo(x, baseY - 44 * scale)
+        ..lineTo(x + 19 * scale, baseY - 25 * scale)
+        ..close();
+      canvas.drawPath(roof, Paint()..color = roofColor);
+
+      final shikhara = Path()
+        ..moveTo(x - 6 * scale, baseY - 44 * scale)
+        ..quadraticBezierTo(
+          x,
+          baseY - 56 * scale,
+          x + 6 * scale,
+          baseY - 44 * scale,
+        )
+        ..close();
+      canvas.drawPath(shikhara, Paint()..color = roofColor);
+
+      canvas.drawLine(
+        Offset(x, baseY - 56 * scale),
+        Offset(x, baseY - 63 * scale),
+        Paint()
+          ..color = trimColor
+          ..strokeWidth = 1.5 * scale,
+      );
+      canvas.drawCircle(
+        Offset(x, baseY - 64 * scale),
+        1.5 * scale,
+        Paint()..color = const Color(0xFFFFC83D),
+      );
+
+      final doorway = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          x - 8 * scale,
           baseY - 18 * scale,
-          18 * scale,
+          16 * scale,
           18 * scale,
         ),
-        p,
+        Radius.circular(5 * scale),
       );
-      final roof = Path()
-        ..moveTo(x - 11 * scale, baseY - 18 * scale)
-        ..lineTo(x, baseY - 32 * scale)
-        ..lineTo(x + 11 * scale, baseY - 18 * scale)
-        ..close();
-      canvas.drawPath(roof, p);
-      canvas.drawLine(
-        Offset(x, baseY - 32 * scale),
-        Offset(x, baseY - 39 * scale),
+      canvas.drawRRect(
+        doorway,
         Paint()
-          ..color = silhouette
-          ..strokeWidth = 1.5,
+          ..color = Color.lerp(
+            const Color(0xFF5B281D),
+            const Color(0xFF130B12),
+            darkAmount,
+          )!,
       );
-      if (darkAmount > 0.02 || festivalHint.isNotEmpty) {
+
+      final glow = (0.38 + 0.45 * darkAmount).clamp(0.0, 0.95);
+      canvas.drawCircle(
+        Offset(x, baseY - 10 * scale),
+        17 * scale,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [
+              const Color(0xFFFFC75B).withValues(alpha: glow),
+              Colors.transparent,
+            ],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(x, baseY - 10 * scale),
+              radius: 17 * scale,
+            ),
+          ),
+      );
+
+      if (durgaIdolVisible) {
+        final idolY = baseY - 10.5 * scale;
+
         canvas.drawCircle(
-          Offset(x, baseY - 6 * scale),
+          Offset(x, idolY - 4 * scale),
+          7.5 * scale,
+          Paint()
+            ..color = const Color(0xFFFFD04B).withValues(alpha: 0.30),
+        );
+
+        final crown = Path()
+          ..moveTo(x - 5 * scale, idolY - 7 * scale)
+          ..lineTo(x - 2.5 * scale, idolY - 13 * scale)
+          ..lineTo(x, idolY - 9.5 * scale)
+          ..lineTo(x + 2.5 * scale, idolY - 13 * scale)
+          ..lineTo(x + 5 * scale, idolY - 7 * scale)
+          ..close();
+        canvas.drawPath(crown, Paint()..color = const Color(0xFFFFD34E));
+
+        canvas.drawCircle(
+          Offset(x, idolY - 4.5 * scale),
+          3.2 * scale,
+          Paint()..color = const Color(0xFFF2A57A),
+        );
+
+        final sari = Path()
+          ..moveTo(x, idolY - 1.5 * scale)
+          ..lineTo(x - 5.3 * scale, idolY + 7.5 * scale)
+          ..lineTo(x + 5.3 * scale, idolY + 7.5 * scale)
+          ..close();
+        canvas.drawPath(sari, Paint()..color = const Color(0xFFD62D2D));
+
+        final armPaint = Paint()
+          ..color = const Color(0xFFFFD47A)
+          ..strokeWidth = 1.05 * scale
+          ..strokeCap = StrokeCap.round;
+        for (final dy in [-1.0, 2.0, 5.0]) {
+          canvas.drawLine(
+            Offset(x - 1.5 * scale, idolY + dy * scale),
+            Offset(x - 8 * scale, idolY + (dy - 2.2) * scale),
+            armPaint,
+          );
+          canvas.drawLine(
+            Offset(x + 1.5 * scale, idolY + dy * scale),
+            Offset(x + 8 * scale, idolY + (dy - 2.2) * scale),
+            armPaint,
+          );
+        }
+
+        final tri = Paint()
+          ..color = const Color(0xFFFFD34E)
+          ..strokeWidth = 1.0 * scale
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(
+          Offset(x + 8 * scale, idolY - 3 * scale),
+          Offset(x + 8 * scale, idolY - 11 * scale),
+          tri,
+        );
+        canvas.drawLine(
+          Offset(x + 6.3 * scale, idolY - 9.2 * scale),
+          Offset(x + 8 * scale, idolY - 12 * scale),
+          tri,
+        );
+        canvas.drawLine(
+          Offset(x + 9.7 * scale, idolY - 9.2 * scale),
+          Offset(x + 8 * scale, idolY - 12 * scale),
+          tri,
+        );
+      } else {
+        canvas.drawCircle(
+          Offset(x, baseY - 5.5 * scale),
           2.1 * scale,
-          Paint()..color = const Color(0xFFFFB74D).withValues(alpha: 0.9),
+          Paint()..color = const Color(0xFFFFB74D),
         );
       }
+
+      canvas.drawRect(
+        Rect.fromLTWH(
+          x - 16 * scale,
+          baseY,
+          32 * scale,
+          2.3 * scale,
+        ),
+        Paint()..color = trimColor,
+      );
+      canvas.drawRect(
+        Rect.fromLTWH(
+          x - 13 * scale,
+          baseY + 2.3 * scale,
+          26 * scale,
+          2.0 * scale,
+        ),
+        Paint()..color = trimColor,
+      );
     }
 
     swayingTree(w * 0.08, groundY, 1.05, 0.0);
@@ -15064,7 +15243,7 @@ class _VillageHorizonPainter extends CustomPainter {
     streetLamp(w * 0.20, groundY + 2);
     swayingTree(w * 0.38, groundY, 0.90, 2.4);
     hut(w * 0.51, groundY + 2, 1.05, chimney: true);
-    tinyTemple(w * 0.64, groundY + 1, 0.95);
+    tinyTemple(w * 0.64, groundY + 1, 1.12);
     swayingTree(w * 0.72, groundY + 1, 1.02, 3.6);
     hut(w * 0.84, groundY + 2, 0.90);
     streetLamp(w * 0.91, groundY + 1);
