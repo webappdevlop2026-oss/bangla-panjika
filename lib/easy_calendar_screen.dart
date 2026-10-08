@@ -159,7 +159,7 @@ class _EasyBengaliCalendarScreenState
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.62,
+                  childAspectRatio: 0.72,
                   crossAxisSpacing: 2,
                   mainAxisSpacing: 2,
                 ),
@@ -354,6 +354,52 @@ class _EasyBengaliCalendarScreenState
     );
   }
 
+  String _weekdayShort(DateTime date) {
+    const names = ['সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি', 'রবি'];
+    return names[date.weekday - 1];
+  }
+
+  String _shortCalendarLabel(
+    dynamic tithi,
+    List<CalendarEvent> events,
+    List<CalendarEvent> filteredEvents,
+  ) {
+    final labels = events.map((e) => e.label).toList();
+
+    for (final label in labels) {
+      if (label.contains('মহাষষ্ঠী')) return 'মহাষষ্ঠী';
+      if (label.contains('মহাসপ্তমী')) return 'মহাসপ্তমী';
+      if (label.contains('মহাষ্টমী')) return 'মহাষ্টমী';
+      if (label.contains('মহানবমী')) return 'মহানবমী';
+      if (label.contains('বিজয়া দশমী') || label.contains('বিজয়া দশমী')) {
+        return 'বিজয়া দশমী';
+      }
+      if (label.contains('দুর্গা')) return 'দুর্গাপূজা';
+      if (label.contains('কালী')) return 'কালীপূজা';
+      if (label.contains('লক্ষ্মী')) return 'লক্ষ্মীপূজা';
+      if (label.contains('সরস্বতী')) return 'সরস্বতী পূজা';
+      if (label.contains('জন্মাষ্টমী')) return 'জন্মাষ্টমী';
+      if (label.contains('শিবরাত্রি')) return 'শিবরাত্রি';
+      if (label.contains('একাদশী')) return 'একাদশী';
+      if (label.contains('অমাবস্যা')) return 'অমাবস্যা';
+      if (label.contains('পূর্ণিমা')) return 'পূর্ণিমা';
+    }
+
+    final name = tithi.name.toString();
+    if (name.contains('অমাবস্যা')) return 'অমাবস্যা';
+    if (name.contains('পূর্ণিমা')) return 'পূর্ণিমা';
+    if (name.contains('একাদশী')) return 'একাদশী';
+    if (name.contains('অষ্টমী')) return 'অষ্টমী';
+    if (name.contains('নবমী')) return 'নবমী';
+    if (name.contains('চতুর্দশী')) return 'চতুর্দশী';
+
+    if (filteredEvents.isNotEmpty) {
+      final label = filteredEvents.first.label;
+      return label.length > 12 ? '${label.substring(0, 11)}…' : label;
+    }
+    return name;
+  }
+
   Widget _dayCell(DateTime greg, int bengaliDay, dynamic info) {
     final now = DateTime.now();
     final isToday = greg.year == now.year &&
@@ -372,6 +418,8 @@ class _EasyBengaliCalendarScreenState
             : events;
 
     final firstEvent = filteredEvents.isEmpty ? null : filteredEvents.first;
+    final shortLabel = _shortCalendarLabel(tithi, events, filteredEvents);
+    final shortWeekday = _weekdayShort(greg);
     final showMoon = tithi.name.contains('পূর্ণিমা') ||
         tithi.name.contains('অমাবস্যা') ||
         tithi.name.contains('একাদশী');
@@ -394,111 +442,68 @@ class _EasyBengaliCalendarScreenState
     final dayTile = InkWell(
       onTap: () => _showDayDetails(greg, bengaliDay, info, tithi, events),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(3, 3, 3, 3),
+        padding: const EdgeInsets.fromLTRB(2, 2, 2, 3),
         decoration: BoxDecoration(
           color: isToday
-              ? const Color(0xFFFFF1B8)
-              : isDurgaFestival
-                  ? const Color(0xFFFFE7CC)
-                  : const Color(0xFFFFFCF4),
-          borderRadius: BorderRadius.circular(10),
+              ? const Color(0xFFFFE6B8)
+              : isMajorFestival
+                  ? const Color(0xFFFFEFE7)
+                  : const Color(0xFFFFFCF7),
+          borderRadius: BorderRadius.circular(3),
           border: Border.all(
             color: isToday
-                ? const Color(0xFFC58A10)
-                : isDurgaFestival
-                    ? const Color(0xFFE65100)
-                    : isMajorFestival
-                        ? const Color(0xFFF59E0B)
-                        : const Color(0xFFE7DDD3),
-            width: isToday
-                ? 2.6
-                : (isDurgaFestival || isMajorFestival)
-                    ? 1.7
-                    : 1,
+                ? const Color(0xFFB76A00)
+                : isMajorFestival
+                    ? const Color(0xFFC83A2D)
+                    : const Color(0xFFC9B7A2),
+            width: isToday || isMajorFestival ? 1.6 : 1,
           ),
-          boxShadow: isToday
-              ? const [
-                  BoxShadow(
-                    color: Color(0x33B77A2C),
-                    blurRadius: 7,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : const [
-                  BoxShadow(
-                    color: Color(0x12000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 1),
-                  ),
-                ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
-              height: 18,
-              child: Stack(
-                clipBehavior: Clip.hardEdge,
+              height: 16,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Positioned(
-                    left: 0,
-                    top: 2,
-                    child: Text(
-                      '${greg.day}',
-                      maxLines: 1,
-                      style: const TextStyle(
-                        color: Color(0xFF7A6A59),
-                        fontSize: 9.4,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  Text(
+                    shortWeekday,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: isSunday
+                          ? const Color(0xFFC40000)
+                          : const Color(0xFF5E5146),
+                      fontSize: 7.8,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  if (isToday)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 3,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF8E1111),
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: const Text(
-                          'আজ',
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 8.6,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
+                  Text(
+                    '${greg.day}/${greg.month}',
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Color(0xFF756A60),
+                      fontSize: 7.6,
+                      fontWeight: FontWeight.w800,
                     ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 1),
-            SizedBox(
-              height: 34,
+            Expanded(
+              flex: 5,
               child: Center(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
                     bnNum(bengaliDay),
                     maxLines: 1,
-                    softWrap: false,
-                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: isToday
-                          ? const Color(0xFF8E1111)
-                          : isSunday
-                              ? const Color(0xFFC40000)
-                              : const Color(0xFF342315),
-                      fontSize: isToday ? 30 : 28,
-                      height: 1.0,
+                      color: isToday || isSunday || isMajorFestival
+                          ? const Color(0xFFC01818)
+                          : const Color(0xFF2E2045),
+                      fontSize: 34,
+                      height: .95,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -506,101 +511,60 @@ class _EasyBengaliCalendarScreenState
               ),
             ),
             const SizedBox(height: 1),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 1),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 1,
-                        vertical: isSpecialTithi ? 2 : 0,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSpecialTithi
-                            ? const Color(0xFFFBE5B8)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
-                        showMoon
-                            ? (tithi.name.contains('পূর্ণিমা')
-                                ? '🌕 ${tithi.name}'
-                                : tithi.name.contains('অমাবস্যা')
-                                    ? '🌑 ${tithi.name}'
-                                    : '◐ ${tithi.name}')
-                            : tithi.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: isSpecialTithi
-                              ? const Color(0xFF9B1111)
-                              : const Color(0xFF5B3A22),
-                          fontSize: isSpecialTithi ? 9.3 : 8.4,
-                          height: 1.0,
-                          fontWeight: isSpecialTithi
-                              ? FontWeight.w900
-                              : FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    if (majorFestivalLabel != null) ...[
-                      const SizedBox(height: 2),
-                      Expanded(
-                        child: Center(
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: isDurgaFestival
-                                  ? const Color(0xFFFFD5B8)
-                                  : const Color(0xFFFFEDC1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              '${majorFestivalEvent!.icon} $majorFestivalLabel',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: isDurgaFestival
-                                    ? const Color(0xFFB71C1C)
-                                    : const Color(0xFFB45309),
-                                fontSize: isDurgaFestival ? 9.2 : 8.7,
-                                height: 1.0,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ] else if (firstEvent != null) ...[
-                      const SizedBox(height: 2),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            '${firstEvent.icon} ${firstEvent.label}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFFC62828),
-                              fontSize: 8.4,
-                              height: 1.0,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+            Container(
+              constraints: const BoxConstraints(minHeight: 19),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+              decoration: BoxDecoration(
+                color: isMajorFestival
+                    ? const Color(0xFFFFDAD2)
+                    : isSpecialTithi
+                        ? const Color(0xFFF1E9F6)
+                        : const Color(0xFFF4F0EA),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isMajorFestival
+                      ? const Color(0xFFE48A7E)
+                      : const Color(0xFFD3C8BC),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                shortLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isMajorFestival
+                      ? const Color(0xFF9F1515)
+                      : isSpecialTithi
+                          ? const Color(0xFF4E2A6D)
+                          : const Color(0xFF4E463F),
+                  fontSize: isMajorFestival ? 8.1 : 7.8,
+                  height: 1.0,
+                  fontWeight:
+                      isMajorFestival ? FontWeight.w900 : FontWeight.w800,
                 ),
               ),
             ),
+            if (isToday) ...[
+              const SizedBox(height: 2),
+              Container(
+                height: 13,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8E1111),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'আজ',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 7.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -612,52 +576,19 @@ class _EasyBengaliCalendarScreenState
       animation: _festivalPulseController,
       child: dayTile,
       builder: (context, child) {
-        final pulse = _festivalPulseController.value;
-        final scale = 1.0;
-        final moveY = 0.0;
-
-        return Transform.translate(
-          offset: Offset(0, moveY),
-          child: Transform.scale(
-            scale: scale,
-            child: Container(
-                decoration: BoxDecoration(
-                  color: Color.lerp(
-                    isDurgaFestival
-                        ? const Color(0xFFFFF3E0)
-                        : const Color(0xFFFFFBEB),
-                    isDurgaFestival
-                        ? const Color(0xFFFFCC80)
-                        : const Color(0xFFFFE8A3),
-                    pulse,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isDurgaFestival
-                        ? const Color(0xFFE65100)
-                        : const Color(0xFFF59E0B),
-                    width: 1.4 + (0.8 * pulse),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color.lerp(
-                        isDurgaFestival
-                            ? const Color(0x55FF6F00)
-                            : const Color(0x33F59E0B),
-                        isDurgaFestival
-                            ? const Color(0xCCFF9800)
-                            : const Color(0x88FFB300),
-                        pulse,
-                      )!,
-                      blurRadius: isDurgaFestival ? 7 : 5,
-                      spreadRadius: isDurgaFestival ? 0.8 : 0.4,
-                    ),
-                  ],
-                ),
-                child: child,
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(3),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 3,
+                offset: Offset(0, 1),
               ),
-            ),
-          );
+            ],
+          ),
+          child: child,
+        );
       },
     );
   }
