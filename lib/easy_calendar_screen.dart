@@ -150,7 +150,7 @@ class _EasyBengaliCalendarScreenState
                 itemCount: leading + totalDays + trailing,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
-                  childAspectRatio: 0.62,
+                  childAspectRatio: 0.56,
                   crossAxisSpacing: 1,
                   mainAxisSpacing: 1,
                 ),
@@ -470,8 +470,8 @@ class _EasyBengaliCalendarScreenState
                         color: showMoon
                             ? const Color(0xFF444444)
                             : const Color(0xFF555555),
-                        fontSize: 9.6,
-                        height: 1.05,
+                        fontSize: 9.2,
+                        height: 1.0,
                         fontWeight:
                             showMoon ? FontWeight.w800 : FontWeight.w700,
                       ),
@@ -499,8 +499,8 @@ class _EasyBengaliCalendarScreenState
                                 color: isDurgaFestival
                                     ? const Color(0xFFB71C1C)
                                     : const Color(0xFFB45309),
-                                fontSize: isDurgaFestival ? 10.2 : 9.6,
-                                height: 1.0,
+                                fontSize: isDurgaFestival ? 9.6 : 9.2,
+                                height: 0.98,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
@@ -518,8 +518,8 @@ class _EasyBengaliCalendarScreenState
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Color(0xFFC62828),
-                              fontSize: 8.8,
-                              height: 1.05,
+                              fontSize: 8.4,
+                              height: 1.0,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
