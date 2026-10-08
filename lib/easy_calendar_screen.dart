@@ -143,7 +143,9 @@ class _EasyBengaliCalendarScreenState
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 28),
           children: [
             _buildMonthTitle(info),
-            const SizedBox(height: 9),
+            const SizedBox(height: 10),
+            _buildMonthlyAuspiciousDays(info),
+            const SizedBox(height: 10),
             _buildWeekHeader(),
             const SizedBox(height: 3),
             Container(
@@ -299,6 +301,151 @@ class _EasyBengaliCalendarScreenState
     );
   }
 
+
+  Widget _buildMonthlyAuspiciousDays(dynamic info) {
+    const categories = <String, (String, String)>{
+      'marriage': ('💍', 'বিবাহ'),
+      'griha': ('🏠', 'গৃহপ্রবেশ'),
+      'annaprashan': ('👶', 'অন্নপ্রাশন'),
+      'byabosha': ('🪔', 'ব্যবসা শুরু'),
+      'namakaran': ('📿', 'নামকরণ'),
+      'jomi': ('🏞️', 'জমি কেনা'),
+      'bari': ('🏡', 'বাড়ি কেনা'),
+      'gari': ('🚗', 'গাড়ি কেনা'),
+    };
+
+    final grouped = <String, List<DateTime>>{
+      for (final key in categories.keys) key: <DateTime>[],
+    };
+
+    for (DateTime day = info.start;
+        !day.isAfter(info.end);
+        day = day.add(const Duration(days: 1))) {
+      final events = BengaliCalendarData.eventsFor(day);
+      for (final event in events) {
+        final dates = grouped[event.category];
+        if (dates == null) continue;
+        if (!dates.any(
+          (d) =>
+              d.year == day.year &&
+              d.month == day.month &&
+              d.day == day.day,
+        )) {
+          dates.add(day);
+        }
+      }
+    }
+
+    final visible = categories.entries
+        .where((entry) => grouped[entry.key]!.isNotEmpty)
+        .toList();
+
+    if (visible.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBF3),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2D4C2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('✨', style: TextStyle(fontSize: 17)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'এই মাসের শুভ দিন • ${info.name} ${bnNum(info.year)}',
+                  style: const TextStyle(
+                    color: Color(0xFF6C3A18),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          SizedBox(
+            height: 92,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: visible.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final entry = visible[index];
+                final meta = entry.value;
+                final dates = grouped[entry.key]!;
+                final dateText = dates
+                    .map((d) {
+                      final bDay = d.difference(info.start).inDays + 1;
+                      return bnNum(bDay);
+                    })
+                    .join(', ');
+
+                return Container(
+                  width: 138,
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE7DED3)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x10000000),
+                        blurRadius: 5,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${meta.$1} ${meta.$2}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF2F2A25),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        dateText,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF9A1818),
+                          fontSize: 16,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        info.name,
+                        style: const TextStyle(
+                          color: Color(0xFF74685C),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildWeekHeader() {
     return Container(
