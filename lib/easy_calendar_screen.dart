@@ -347,160 +347,6 @@ class _EasyBengaliCalendarScreenState
     );
   }
 
-class _MonthlyAuspiciousTicker extends StatefulWidget {
-  final String monthName;
-  final int year;
-  final List<(String icon, String title, String dates)> items;
-
-  const _MonthlyAuspiciousTicker({
-    required this.monthName,
-    required this.year,
-    required this.items,
-  });
-
-  @override
-  State<_MonthlyAuspiciousTicker> createState() =>
-      _MonthlyAuspiciousTickerState();
-}
-
-class _MonthlyAuspiciousTickerState extends State<_MonthlyAuspiciousTicker> {
-  Timer? _timer;
-  int _index = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!mounted || widget.items.length <= 1) return;
-      setState(() {
-        _index = (_index + 1) % widget.items.length;
-      });
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _MonthlyAuspiciousTicker oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.monthName != widget.monthName ||
-        oldWidget.year != widget.year ||
-        oldWidget.items.length != widget.items.length) {
-      _index = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.items[_index];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBF3),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2D4C2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text('✨', style: TextStyle(fontSize: 17)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'এই মাসের শুভ দিন • ${widget.monthName} ${bnNum(widget.year)}',
-                  style: const TextStyle(
-                    color: Color(0xFF6C3A18),
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 450),
-            transitionBuilder: (child, animation) {
-              final offset = Tween<Offset>(
-                begin: const Offset(0.18, 0),
-                end: Offset.zero,
-              ).animate(animation);
-              return SlideTransition(
-                position: offset,
-                child: FadeTransition(opacity: animation, child: child),
-              );
-            },
-            child: Container(
-              key: ValueKey('${item.$2}-$_index'),
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(11),
-                border: Border.all(color: const Color(0xFFE8DFD5)),
-              ),
-              child: Row(
-                children: [
-                  Text(item.$1, style: const TextStyle(fontSize: 24)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      item.$2,
-                      style: const TextStyle(
-                        color: Color(0xFF2E2925),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    item.$3,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: Color(0xFF9A1818),
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (widget.items.length > 1) ...[
-            const SizedBox(height: 7),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(widget.items.length, (i) {
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  width: i == _index ? 14 : 5,
-                  height: 5,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    color: i == _index
-                        ? const Color(0xFF9A1818)
-                        : const Color(0xFFD6C9BC),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                );
-              }),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-
   Widget _buildWeekHeader() {
     return Container(
       decoration: BoxDecoration(
@@ -874,6 +720,159 @@ class _MonthlyAuspiciousTickerState extends State<_MonthlyAuspiciousTicker> {
 // =====================================================================
 // Home Screen — আলাদা একাদশী field
 // =====================================================================
+
+class _MonthlyAuspiciousTicker extends StatefulWidget {
+  final String monthName;
+  final int year;
+  final List<(String icon, String title, String dates)> items;
+
+  const _MonthlyAuspiciousTicker({
+    required this.monthName,
+    required this.year,
+    required this.items,
+  });
+
+  @override
+  State<_MonthlyAuspiciousTicker> createState() =>
+      _MonthlyAuspiciousTickerState();
+}
+
+class _MonthlyAuspiciousTickerState extends State<_MonthlyAuspiciousTicker> {
+  Timer? _timer;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || widget.items.length <= 1) return;
+      setState(() {
+        _index = (_index + 1) % widget.items.length;
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _MonthlyAuspiciousTicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.monthName != widget.monthName ||
+        oldWidget.year != widget.year ||
+        oldWidget.items.length != widget.items.length) {
+      _index = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.items[_index];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBF3),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2D4C2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('✨', style: TextStyle(fontSize: 17)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'এই মাসের শুভ দিন • ${widget.monthName} ${bnNum(widget.year)}',
+                  style: const TextStyle(
+                    color: Color(0xFF6C3A18),
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            transitionBuilder: (child, animation) {
+              final offset = Tween<Offset>(
+                begin: const Offset(0.18, 0),
+                end: Offset.zero,
+              ).animate(animation);
+              return SlideTransition(
+                position: offset,
+                child: FadeTransition(opacity: animation, child: child),
+              );
+            },
+            child: Container(
+              key: ValueKey('${item.$2}-$_index'),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: const Color(0xFFE8DFD5)),
+              ),
+              child: Row(
+                children: [
+                  Text(item.$1, style: const TextStyle(fontSize: 24)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      item.$2,
+                      style: const TextStyle(
+                        color: Color(0xFF2E2925),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    item.$3,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: Color(0xFF9A1818),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (widget.items.length > 1) ...[
+            const SizedBox(height: 7),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(widget.items.length, (i) {
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  width: i == _index ? 14 : 5,
+                  height: 5,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: i == _index
+                        ? const Color(0xFF9A1818)
+                        : const Color(0xFFD6C9BC),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                );
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
 class _LiveTithiData {
   final String title;
