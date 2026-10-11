@@ -16259,10 +16259,13 @@ class PanchangCalculator {
     double? lon,
   }) {
     final st = sunTimes(localDate, lat: lat, lon: lon);
-    final solarNoon = st.sunrise.add(st.sunset.difference(st.sunrise) ~/ 2);
+    final daylight = st.sunset.difference(st.sunrise);
+    final oneMuhurta = daylight ~/ 15;
+    final start = st.sunrise.add(oneMuhurta * 7);
+    final end = st.sunrise.add(oneMuhurta * 8);
     return {
-      'start': solarNoon.subtract(const Duration(minutes: 24)),
-      'end': solarNoon.add(const Duration(minutes: 24)),
+      'start': start,
+      'end': end,
       'applicable': localDate.weekday != DateTime.wednesday,
     };
   }
