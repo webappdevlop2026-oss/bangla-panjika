@@ -5067,13 +5067,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
                   try {
                     final now = DateTime.now();
                     final sun = PanchangCalculator.sunTimes(now);
-                    final moonAge = PanchangCalculator.moonAgeDays(now);
-                    final moonrise = sun.sunrise.add(
-                      Duration(minutes: (moonAge * 48.8).round()),
-                    );
+                    final moon = PanchangCalculator.moonRiseSet(now);
                     sunriseTxt = bnTime12(sun.sunrise);
                     sunsetTxt = bnTime12(sun.sunset);
-                    moonriseTxt = moonrise == null ? '—' : bnTime12(moonrise);
+                    moonriseTxt = moon.$1 == null ? '—' : bnTime12(moon.$1!);
                   } catch (_) {
                     final now = DateTime.now();
                     final fallbackLat =
@@ -5087,13 +5084,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
                       lat: fallbackLat,
                       lon: fallbackLon,
                     );
-                    final moonAge = PanchangCalculator.moonAgeDays(now);
-                    final moonrise = sun.sunrise.add(
-                      Duration(minutes: (moonAge * 48.8).round()),
-                    );
+                    final moon = PanchangCalculator.moonRiseSet(now);
                     sunriseTxt = bnTime12(sun.sunrise);
                     sunsetTxt = bnTime12(sun.sunset);
-                    moonriseTxt = moonrise == null ? '—' : bnTime12(moonrise);
+                    moonriseTxt = moon.$1 == null ? '—' : bnTime12(moon.$1!);
                   }
                   return Row(
                     children: [
@@ -8113,8 +8107,8 @@ class _LiveInfoRow extends StatelessWidget {
     final items = [
       '☀️ সূর্যোদয় ${bnTime12(sun.sunrise)}',
       '🌇 সূর্যাস্ত ${bnTime12(sun.sunset)}',
-      '🌙 চন্দ্রোদয় ${moonrise == null ? '—' : moonrise == null ? '—' : bnTime12(moonrise)}',
-      '🌗 চন্দ্রাস্ত ${moonset == null ? '—' : moonset == null ? '—' : bnTime12(moonset)}',
+      '🌙 চন্দ্রোদয় ${moonrise == null ? '—' : bnTime12(moonrise)}',
+      '🌗 চন্দ্রাস্ত ${moonset == null ? '—' : bnTime12(moonset)}',
       '🕉 তিথি: ${tithi.paksha} পক্ষ • ${tithi.name}',
       '⭐ নক্ষত্র: ${PanchangCalculator.nakshatraNames[nakIdx]}',
       '🪐 চন্দ্র রাশি: ${PanchangCalculator.rashiNames[rashiIdx]}',
