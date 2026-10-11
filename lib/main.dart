@@ -28,6 +28,8 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
+import 'panchang_accuracy.dart';
+
 part 'easy_calendar_screen.dart';
 
 final RouteObserver<ModalRoute<void>> routeObserver =
@@ -15692,34 +15694,9 @@ class PanchangCalculator {
 
   /// চাঁদের apparent ecliptic longitude (ডিগ্রি) — Meeus ch.47 truncated series (~১০′ নির্ভুল)
   static double moonLongitude(double jd) {
-    final t = (jd - 2451545.0) / 36525.0;
-    final lp = _norm360(218.3164477 + 481267.88123421 * t);
-    final d = _norm360(297.8501921 + 445267.1114034 * t);
-    final m = _norm360(357.5291092 + 35999.0502909 * t);
-    final mp = _norm360(134.9633964 + 477198.8675055 * t);
-    final f = _norm360(93.2720950 + 483202.0175233 * t);
-
-    final dr = _deg2rad(d),
-        mr = _deg2rad(m),
-        mpr = _deg2rad(mp),
-        fr = _deg2rad(f);
-
-    final dLon =
-        6.289 * math.sin(mpr) -
-        1.274 * math.sin(2 * dr - mpr) +
-        0.658 * math.sin(2 * dr) -
-        0.186 * math.sin(mr) -
-        0.059 * math.sin(2 * mpr - 2 * dr) -
-        0.057 * math.sin(mpr - 2 * dr + mr) +
-        0.053 * math.sin(mpr + 2 * dr) +
-        0.046 * math.sin(2 * dr - mr) +
-        0.041 * math.sin(mpr - mr) -
-        0.035 * math.sin(dr) -
-        0.031 * math.sin(mpr + mr) -
-        0.015 * math.sin(2 * fr - 2 * dr) +
-        0.011 * math.sin(mpr - 4 * dr);
-
-    return _norm360(lp + dLon);
+    // Full Meeus lunar ephemeris. The old truncated series could shift
+    // tithi/nakshatra boundaries by several minutes.
+    return PanchangAccuracy.moonLongitudeDegrees(jd);
   }
 
   static const double _ayanamsaJ2000 =
@@ -15941,9 +15918,7 @@ class PanchangCalculator {
   /// চাঁদের ecliptic latitude (ডিগ্রি) — প্রধান পদ (~৫.১৩°) দিয়ে আনুমানিক;
   /// আকাশে ওঠা/নামা (visibility) যাচাইয়ের জন্য যথেষ্ট নির্ভুল
   static double moonLatitude(double jd) {
-    final t = (jd - 2451545.0) / 36525.0;
-    final f = _deg2rad(_norm360(93.2720950 + 483202.0175233 * t));
-    return 5.128 * math.sin(f);
+    return PanchangAccuracy.moonLatitudeDegrees(jd);
   }
 
   static const double _obliquityDeg = 23.4397; // পৃথিবীর অক্ষের হেলান
@@ -16146,6 +16121,7 @@ class PanchangCalculator {
       for (int i = 0; i < 20; i++) {
         final mid = DateTime.fromMillisecondsSinceEpoch(
           (known.millisecondsSinceEpoch + unknown.millisecondsSinceEpoch) ~/ 2,
+          isUtc: moment.isUtc,
         );
         if (tithiFor(mid).index == idx) {
           known = mid;
@@ -16192,6 +16168,21 @@ class PanchangCalculator {
     final moon = moonLongitude(jd);
     final elong = _norm360(moon - sun);
     return elong / 360.0 * 29.530588853;
+  }
+
+  /// Real topocentric moonrise/moonset for the selected GPS/district location.
+  /// A lunar event may be absent on a civil date, so rise/set are nullable.
+  static Map<String, DateTime?> moonTimes(
+    DateTime localDate, {
+    double? lat,
+    double? lon,
+  }) {
+    final mt = PanchangAccuracy.moonTimes(
+      localDate,
+      lat: lat ?? AppLocation.lat,
+      lon: lon ?? AppLocation.lon,
+    );
+    return {'rise': mt.moonrise, 'set': mt.moonset};
   }
 
   /// সূর্যোদয়/সূর্যাস্ত (IST) — Sunrise equation (Meeus/NOAA সরলীকৃত সংস্করণ)
@@ -16396,7 +16387,11 @@ class PanchangCalculator {
 
   static int yogaIndexFor(DateTime localDateTime) {
     final jd = julianDay(_toTrueUtc(localDateTime));
-    final sum = _norm360(sunLongitude(jd) + moonLongitude(jd));
+    // Panchang Nitya Yoga is based on the sum of NIRAYANA (sidereal)
+    // Sun + Moon longitudes, so Lahiri ayanamsa must be removed from both.
+    final sum = _norm360(
+      sunLongitude(jd) + moonLongitude(jd) - 2 * ayanamsa(jd),
+    );
     return (sum / (360.0 / 27.0)).floor().clamp(0, 26);
   }
 
