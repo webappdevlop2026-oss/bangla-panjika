@@ -17689,8 +17689,11 @@ class BengaliCalendarData {
     TithiInfo tithiAtRef(String ref) {
       switch (ref) {
         case 'nishita':
+          // Panchang is India/IST based. Build an IST wall-clock value with
+          // the same marker convention used by sunTimes(), so the result
+          // does not depend on the phone/browser's own timezone.
           return PanchangCalculator.tithiFor(
-            DateTime(day.year, day.month, day.day, 23, 59),
+            DateTime.utc(day.year, day.month, day.day, 23, 59),
           );
         case 'pradosh':
           return PanchangCalculator.tithiFor(sun.sunset);
