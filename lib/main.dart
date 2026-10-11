@@ -17598,16 +17598,17 @@ class BengaliCalendarData {
       final sun = PanchangCalculator.sunTimes(d, lat: lat, lon: lon);
       final tithi = PanchangCalculator.tithiFor(sun.sunrise);
       final nakIdx = PanchangCalculator.nakshatraIndexFor(sun.sunrise);
-      final solarNoon = sun.sunrise.add(
-        sun.sunset.difference(sun.sunrise) ~/ 2,
-      );
+      final dayLength = sun.sunset.difference(sun.sunrise);
+      final solarNoon = sun.sunrise.add(dayLength ~/ 2);
+      final abhijitLength = dayLength ~/ 15;
+      final abhijitHalf = abhijitLength ~/ 2;
       final rahu = PanchangCalculator.rahuKalam(d, lat: lat, lon: lon);
       return {
         'date': d,
         'tithi': tithi,
         'nakshatra': PanchangCalculator.nakshatraNames[nakIdx],
-        'abhijitStart': solarNoon.subtract(const Duration(minutes: 24)),
-        'abhijitEnd': solarNoon.add(const Duration(minutes: 24)),
+        'abhijitStart': solarNoon.subtract(abhijitHalf),
+        'abhijitEnd': solarNoon.add(abhijitLength - abhijitHalf),
         'abhijitApplicable': d.weekday != DateTime.wednesday,
         'rahuStart': rahu['start'],
         'rahuEnd': rahu['end'],
