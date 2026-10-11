@@ -16376,7 +16376,13 @@ class PanchangCalculator {
   }) {
     final la = lat ?? AppLocation.lat;
     final lo = lon ?? AppLocation.lon;
-    final start = DateTime(localDate.year, localDate.month, localDate.day);
+    // Use the same "IST wall-clock marked as UTC" convention as sunTimes().
+    // This keeps rise/set scanning independent of the phone/browser timezone.
+    final start = DateTime.utc(
+      localDate.year,
+      localDate.month,
+      localDate.day,
+    );
     final end = start.add(const Duration(days: 1));
     const h0 = 0.125;
 
@@ -16497,10 +16503,15 @@ class PanchangCalculator {
     double? lon,
   }) {
     final st = sunTimes(localDate, lat: lat, lon: lon);
-    final solarNoon = st.sunrise.add(st.sunset.difference(st.sunrise) ~/ 2);
+    final dayLength = st.sunset.difference(st.sunrise);
+    final solarNoon = st.sunrise.add(dayLength ~/ 2);
+    // Traditional Abhijit Muhurta is one-fifteenth of the daylight,
+    // centered on local solar noon (not a fixed 48 minutes year-round).
+    final abhijitLength = dayLength ~/ 15;
+    final half = abhijitLength ~/ 2;
     return {
-      'start': solarNoon.subtract(const Duration(minutes: 24)),
-      'end': solarNoon.add(const Duration(minutes: 24)),
+      'start': solarNoon.subtract(half),
+      'end': solarNoon.add(abhijitLength - half),
       'applicable': localDate.weekday != DateTime.wednesday,
     };
   }
