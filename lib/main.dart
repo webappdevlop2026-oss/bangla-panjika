@@ -15884,7 +15884,7 @@ class PanchangCalculator {
         fr = _deg2rad(f);
 
     final dLon =
-        6.289 * math.sin(mpr) -
+        6.289 * math.sin(mpr) +
         1.274 * math.sin(2 * dr - mpr) +
         0.658 * math.sin(2 * dr) -
         0.186 * math.sin(mr) -
@@ -16575,7 +16575,13 @@ class PanchangCalculator {
 
   static int yogaIndexFor(DateTime localDateTime) {
     final jd = julianDay(_toTrueUtc(localDateTime));
-    final sum = _norm360(sunLongitude(jd) + moonLongitude(jd));
+    // Panchanga Nitya Yoga uses the SUM of the SIDEREAL (nirayana)
+    // longitudes of Sun and Moon. Because ayanamsa is subtracted from
+    // each body, it must be subtracted twice from the tropical sum.
+    final ayan = ayanamsa(jd);
+    final siderealSun = _norm360(sunLongitude(jd) - ayan);
+    final siderealMoon = _norm360(moonLongitude(jd) - ayan);
+    final sum = _norm360(siderealSun + siderealMoon);
     return (sum / (360.0 / 27.0)).floor().clamp(0, 26);
   }
 
