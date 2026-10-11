@@ -5,6 +5,7 @@ import 'package:astronomia/coord.dart' as astro_coord;
 import 'package:astronomia/moonposition.dart' as astro_moon;
 import 'package:astronomia/rise.dart' as astro_rise;
 import 'package:astronomia/sidereal.dart' as astro_sid;
+import 'package:astronomia/solar.dart' as astro_solar;
 import 'package:astronomia/sunrise.dart' as astro_sunrise;
 
 /// High-accuracy astronomical calculations used by the Panchang layer.
@@ -35,6 +36,11 @@ class PanchangAccuracy {
     if (v < 0) v += 360.0;
     return v;
   }
+
+  /// Apparent geocentric solar longitude (Meeus), including nutation
+  /// and aberration; used for tithi, yoga and solar-month boundaries.
+  static double sunLongitudeDegrees(double jd) =>
+      _norm360(astro.toDeg(astro_solar.apparentLongitude(astro.j2000Century(jd))));
 
   /// Full Meeus lunar position instead of the old heavily truncated series.
   static double moonLongitudeDegrees(double jd) =>
