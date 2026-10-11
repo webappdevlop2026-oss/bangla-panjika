@@ -15681,15 +15681,7 @@ class PanchangCalculator {
 
   /// সূর্যের apparent ecliptic longitude (ডিগ্রি) — Meeus ch.25 নিম্ন-নির্ভুলতা সূত্র
   static double sunLongitude(double jd) {
-    final t = (jd - 2451545.0) / 36525.0;
-    final l0 = _norm360(280.46646 + 36000.76983 * t + 0.0003032 * t * t);
-    final m = _norm360(357.52911 + 35999.05029 * t - 0.0001537 * t * t);
-    final mr = _deg2rad(m);
-    final c =
-        (1.914602 - 0.004817 * t - 0.000014 * t * t) * math.sin(mr) +
-        (0.019993 - 0.000101 * t) * math.sin(2 * mr) +
-        0.000289 * math.sin(3 * mr);
-    return _norm360(l0 + c);
+    return PanchangAccuracy.sunLongitudeDegrees(jd);
   }
 
   /// চাঁদের apparent ecliptic longitude (ডিগ্রি) — Meeus ch.47 truncated series (~১০′ নির্ভুল)
