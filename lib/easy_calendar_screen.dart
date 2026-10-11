@@ -1747,7 +1747,11 @@ class _LiveTithiDetailScreenState extends State<LiveTithiDetailScreen> {
     final data = widget.data;
     final isBefore = _now.isBefore(data.start);
     final isLive = !isBefore && _now.isBefore(data.end);
-    final tithi = PanchangCalculator.tithiFor(data.day);
+    // Use an instant inside the actual matched tithi. Using midnight of
+    // data.day can point to the previous tithi when a transition happens later.
+    final tithi = PanchangCalculator.tithiFor(
+      data.start.add(const Duration(minutes: 1)),
+    );
     final eventText = data.event?.label.trim();
     final loc = LocationService.instance.hasGps
         ? 'GPS Live'
