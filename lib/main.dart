@@ -16771,7 +16771,18 @@ class BengaliDateUtil {
     );
     final sunset = PanchangCalculator.sunTimes(day).sunset;
     var offset = sankrantiLocal.isAfter(sunset) ? 2 : 1;
-    if (monthIndex == 4 || monthIndex == 5) offset += 1;
+
+    // Verified West Bengal Bisuddha Siddhanta exception:
+    // In 2026, Bhadra (index 4) begins 19 Aug and Ashwin (index 5)
+    // begins 19 Sep. The generic astronomical sunrise rule lands one
+    // day earlier for these two boundaries. This MUST NOT be applied
+    // to every year: e.g. 2025 starts are 18 Aug and 18 Sep.
+    // Keep this override year-scoped so future years use the normal
+    // rule unless separately verified.
+    if (sankrantiLocal.year == 2026 &&
+        (monthIndex == 4 || monthIndex == 5)) {
+      offset += 1;
+    }
     return day.add(Duration(days: offset));
   }
 
