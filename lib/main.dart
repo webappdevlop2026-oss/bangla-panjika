@@ -4925,13 +4925,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
     try {
       final now = DateTime.now();
       final sun = PanchangCalculator.sunTimes(now);
-      final moonAge = PanchangCalculator.moonAgeDays(now);
-      final moonrise = sun.sunrise.add(
-        Duration(minutes: (moonAge * 48.8).round()),
-      );
+      final moon = PanchangCalculator.moonRiseSet(now);
       sunriseTxt = bnTime12(sun.sunrise);
       sunsetTxt = bnTime12(sun.sunset);
-      moonriseTxt = bnTime12(moonrise);
+      moonriseTxt = moon.$1 == null ? '—' : bnTime12(moon.$1!);
     } catch (_) {
       final now = DateTime.now();
       final fallbackLat =
@@ -4943,13 +4940,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
         lat: fallbackLat,
         lon: fallbackLon,
       );
-      final moonAge = PanchangCalculator.moonAgeDays(now);
-      final moonrise = sun.sunrise.add(
-        Duration(minutes: (moonAge * 48.8).round()),
-      );
+      final moon = PanchangCalculator.moonRiseSet(now);
       sunriseTxt = bnTime12(sun.sunrise);
       sunsetTxt = bnTime12(sun.sunset);
-      moonriseTxt = bnTime12(moonrise);
+      moonriseTxt = moon.$1 == null ? '—' : bnTime12(moon.$1!);
     }
 
     return Row(
@@ -5079,7 +5073,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
                     );
                     sunriseTxt = bnTime12(sun.sunrise);
                     sunsetTxt = bnTime12(sun.sunset);
-                    moonriseTxt = bnTime12(moonrise);
+                    moonriseTxt = moonrise == null ? '—' : bnTime12(moonrise);
                   } catch (_) {
                     final now = DateTime.now();
                     final fallbackLat =
@@ -5099,7 +5093,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
                     );
                     sunriseTxt = bnTime12(sun.sunrise);
                     sunsetTxt = bnTime12(sun.sunset);
-                    moonriseTxt = bnTime12(moonrise);
+                    moonriseTxt = moonrise == null ? '—' : bnTime12(moonrise);
                   }
                   return Row(
                     children: [
@@ -8112,17 +8106,15 @@ class _LiveInfoRow extends StatelessWidget {
     final rashiIdx = PanchangCalculator.rashiIndexFor(now);
     final rahu = PanchangCalculator.rahuKalam(now);
     final abhijit = PanchangCalculator.abhijitMuhurta(now);
-    final moonAge = PanchangCalculator.moonAgeDays(now);
-    final moonrise = sun.sunrise.add(
-      Duration(minutes: (moonAge * 48.8).round()),
-    );
-    final moonset = moonrise.add(const Duration(hours: 12, minutes: 25));
+    final moonTimes = PanchangCalculator.moonRiseSet(now);
+    final moonrise = moonTimes.$1;
+    final moonset = moonTimes.$2;
 
     final items = [
       '☀️ সূর্যোদয় ${bnTime12(sun.sunrise)}',
       '🌇 সূর্যাস্ত ${bnTime12(sun.sunset)}',
-      '🌙 চন্দ্রোদয় ${bnTime12(moonrise)}',
-      '🌗 চন্দ্রাস্ত ${bnTime12(moonset)}',
+      '🌙 চন্দ্রোদয় ${moonrise == null ? '—' : moonrise == null ? '—' : bnTime12(moonrise)}',
+      '🌗 চন্দ্রাস্ত ${moonset == null ? '—' : moonset == null ? '—' : bnTime12(moonset)}',
       '🕉 তিথি: ${tithi.paksha} পক্ষ • ${tithi.name}',
       '⭐ নক্ষত্র: ${PanchangCalculator.nakshatraNames[nakIdx]}',
       '🪐 চন্দ্র রাশি: ${PanchangCalculator.rashiNames[rashiIdx]}',
@@ -16376,6 +16368,65 @@ class PanchangCalculator {
     final moon = moonLongitude(jd);
     final elong = _norm360(moon - sun);
     return elong / 360.0 * 29.530588853;
+  }
+
+  /// চন্দ্রোদয়/চন্দ্রাস্ত — geocentric lunar altitude-এর horizon crossing
+  /// থেকে বের করা হয়। Moon-এর জন্য Meeus-এর mean standard altitude
+  /// +0.125° ব্যবহার করা হয়েছে (refraction + semidiameter + mean parallax)।
+  /// ১০ মিনিট coarse scan-এর পরে binary search করে sub-minute crossing
+  /// বের করা হয়; আগের moonAge×48.8 এবং +12h25m আনুমানিকতা আর ব্যবহৃত হয় না।
+  static (DateTime? rise, DateTime? set) moonRiseSet(
+    DateTime localDate, {
+    double? lat,
+    double? lon,
+  }) {
+    final la = lat ?? AppLocation.lat;
+    final lo = lon ?? AppLocation.lon;
+    final start = DateTime(localDate.year, localDate.month, localDate.day);
+    final end = start.add(const Duration(days: 1));
+    const h0 = 0.125;
+
+    double f(DateTime t) =>
+        celestialAltAz('moon', t, lat: la, lon: lo)['altitude']! - h0;
+
+    DateTime refine(DateTime a, DateTime b, bool rising) {
+      var loT = a;
+      var hiT = b;
+      for (int i = 0; i < 24; i++) {
+        final mid = DateTime.fromMillisecondsSinceEpoch(
+          (loT.millisecondsSinceEpoch + hiT.millisecondsSinceEpoch) ~/ 2,
+        );
+        final v = f(mid);
+        if (rising ? v >= 0 : v <= 0) {
+          hiT = mid;
+        } else {
+          loT = mid;
+        }
+      }
+      return hiT;
+    }
+
+    DateTime? rise;
+    DateTime? set;
+    var prevT = start;
+    var prevV = f(prevT);
+    for (
+      var t = start.add(const Duration(minutes: 10));
+      !t.isAfter(end);
+      t = t.add(const Duration(minutes: 10))
+    ) {
+      final v = f(t);
+      if (rise == null && prevV < 0 && v >= 0) {
+        rise = refine(prevT, t, true);
+      }
+      if (set == null && prevV >= 0 && v < 0) {
+        set = refine(prevT, t, false);
+      }
+      if (rise != null && set != null) break;
+      prevT = t;
+      prevV = v;
+    }
+    return (rise, set);
   }
 
   /// সূর্যোদয়/সূর্যাস্ত (IST) — Sunrise equation (Meeus/NOAA সরলীকৃত সংস্করণ)
@@ -34200,11 +34251,9 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    final moonAge = PanchangCalculator.moonAgeDays(now);
-    final moonrise = sun.sunrise.add(
-      Duration(minutes: (moonAge * 48.8).round()),
-    );
-    final moonset = moonrise.add(const Duration(hours: 12, minutes: 25));
+    final moonTimes = PanchangCalculator.moonRiseSet(now);
+    final moonrise = moonTimes.$1;
+    final moonset = moonTimes.$2;
     final rahu = PanchangCalculator.rahuKalam(
       now,
       lat: AppLocation.lat,
@@ -34313,7 +34362,7 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                 child: Column(
                   children: [
                     kv('☀️', 'সূর্যোদয়', bnTime12(sun.sunrise)),
-                    kv('🌙', 'চন্দ্রোদয়', bnTime12(moonrise)),
+                    kv('🌙', 'চন্দ্রোদয়', moonrise == null ? '—' : bnTime12(moonrise)),
                     kv(
                       '🐍',
                       'রাহুকাল',
@@ -34334,7 +34383,7 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                 child: Column(
                   children: [
                     kv('🌇', 'সূর্যাস্ত', bnTime12(sun.sunset)),
-                    kv('🌘', 'চন্দ্রাস্ত', bnTime12(moonset)),
+                    kv('🌘', 'চন্দ্রাস্ত', moonset == null ? '—' : bnTime12(moonset)),
                     kv(
                       '⚠️',
                       'যমগণ্ড',
@@ -42883,8 +42932,9 @@ class _Phase14AdvancedMoonCenterScreenState
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    final moonrise = sun.sunrise.add(Duration(minutes: (age * 48.8).round()));
-    final moonset = moonrise.add(const Duration(hours: 12, minutes: 25));
+    final moonTimes = PanchangCalculator.moonRiseSet(now);
+    final moonrise = moonTimes.$1;
+    final moonset = moonTimes.$2;
     final full = _nextTithi('পূর্ণিমা');
     final newMoon = _nextTithi('অমাবস্যা');
     final rashi =
@@ -42960,8 +43010,8 @@ class _Phase14AdvancedMoonCenterScreenState
                     spacing: 12,
                     runSpacing: 10,
                     children: [
-                      _moonFact('🌙 চন্দ্রোদয়', bnTime12(moonrise)),
-                      _moonFact('🌗 চন্দ্রাস্ত', bnTime12(moonset)),
+                      _moonFact('🌙 চন্দ্রোদয়', moonrise == null ? '—' : bnTime12(moonrise)),
+                      _moonFact('🌗 চন্দ্রাস্ত', moonset == null ? '—' : bnTime12(moonset)),
                       _moonFact(
                         '🌕 পরের পূর্ণিমা',
                         full == null
