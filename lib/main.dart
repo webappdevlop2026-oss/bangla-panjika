@@ -4743,13 +4743,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
     try {
       final now = DateTime.now();
       final sun = PanchangCalculator.sunTimes(now);
-      final moonAge = PanchangCalculator.moonAgeDays(now);
-      final moonrise = sun.sunrise.add(
-        Duration(minutes: (moonAge * 48.8).round()),
-      );
+      final moon = PanchangCalculator.moonTimes(now);
+      final moonrise = moon['rise'];
       sunriseTxt = bnTime12(sun.sunrise);
       sunsetTxt = bnTime12(sun.sunset);
-      moonriseTxt = bnTime12(moonrise);
+      moonriseTxt = moonrise == null ? 'আজ নেই' : bnTime12(moonrise);
     } catch (_) {
       final now = DateTime.now();
       final fallbackLat =
@@ -4761,13 +4759,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
         lat: fallbackLat,
         lon: fallbackLon,
       );
-      final moonAge = PanchangCalculator.moonAgeDays(now);
-      final moonrise = sun.sunrise.add(
-        Duration(minutes: (moonAge * 48.8).round()),
+      final moon = PanchangCalculator.moonTimes(
+        now,
+        lat: fallbackLat,
+        lon: fallbackLon,
       );
+      final moonrise = moon['rise'];
       sunriseTxt = bnTime12(sun.sunrise);
       sunsetTxt = bnTime12(sun.sunset);
-      moonriseTxt = bnTime12(moonrise);
+      moonriseTxt = moonrise == null ? 'আজ নেই' : bnTime12(moonrise);
     }
 
     return Row(
@@ -4891,13 +4891,12 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
                   try {
                     final now = DateTime.now();
                     final sun = PanchangCalculator.sunTimes(now);
-                    final moonAge = PanchangCalculator.moonAgeDays(now);
-                    final moonrise = sun.sunrise.add(
-                      Duration(minutes: (moonAge * 48.8).round()),
-                    );
+                    final moon = PanchangCalculator.moonTimes(now);
+                    final moonrise = moon['rise'];
                     sunriseTxt = bnTime12(sun.sunrise);
                     sunsetTxt = bnTime12(sun.sunset);
-                    moonriseTxt = bnTime12(moonrise);
+                    moonriseTxt =
+                        moonrise == null ? 'আজ নেই' : bnTime12(moonrise);
                   } catch (_) {
                     final now = DateTime.now();
                     final fallbackLat =
@@ -7930,17 +7929,15 @@ class _LiveInfoRow extends StatelessWidget {
     final rashiIdx = PanchangCalculator.rashiIndexFor(now);
     final rahu = PanchangCalculator.rahuKalam(now);
     final abhijit = PanchangCalculator.abhijitMuhurta(now);
-    final moonAge = PanchangCalculator.moonAgeDays(now);
-    final moonrise = sun.sunrise.add(
-      Duration(minutes: (moonAge * 48.8).round()),
-    );
-    final moonset = moonrise.add(const Duration(hours: 12, minutes: 25));
+    final moon = PanchangCalculator.moonTimes(now);
+    final moonrise = moon['rise'];
+    final moonset = moon['set'];
 
     final items = [
       '☀️ সূর্যোদয় ${bnTime12(sun.sunrise)}',
       '🌇 সূর্যাস্ত ${bnTime12(sun.sunset)}',
-      '🌙 চন্দ্রোদয় ${bnTime12(moonrise)}',
-      '🌗 চন্দ্রাস্ত ${bnTime12(moonset)}',
+      '🌙 চন্দ্রোদয় ${moonrise == null ? 'আজ নেই' : bnTime12(moonrise)}',
+      '🌗 চন্দ্রাস্ত ${moonset == null ? 'আজ নেই' : bnTime12(moonset)}',
       '🕉 তিথি: ${tithi.paksha} পক্ষ • ${tithi.name}',
       '⭐ নক্ষত্র: ${PanchangCalculator.nakshatraNames[nakIdx]}',
       '🪐 চন্দ্র রাশি: ${PanchangCalculator.rashiNames[rashiIdx]}',
@@ -34005,11 +34002,13 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    final moonAge = PanchangCalculator.moonAgeDays(now);
-    final moonrise = sun.sunrise.add(
-      Duration(minutes: (moonAge * 48.8).round()),
+    final moon = PanchangCalculator.moonTimes(
+      now,
+      lat: AppLocation.lat,
+      lon: AppLocation.lon,
     );
-    final moonset = moonrise.add(const Duration(hours: 12, minutes: 25));
+    final moonrise = moon['rise'];
+    final moonset = moon['set'];
     final rahu = PanchangCalculator.rahuKalam(
       now,
       lat: AppLocation.lat,
@@ -42688,8 +42687,13 @@ class _Phase14AdvancedMoonCenterScreenState
       lat: AppLocation.lat,
       lon: AppLocation.lon,
     );
-    final moonrise = sun.sunrise.add(Duration(minutes: (age * 48.8).round()));
-    final moonset = moonrise.add(const Duration(hours: 12, minutes: 25));
+    final moon = PanchangCalculator.moonTimes(
+      now,
+      lat: AppLocation.lat,
+      lon: AppLocation.lon,
+    );
+    final moonrise = moon['rise'];
+    final moonset = moon['set'];
     final full = _nextTithi('পূর্ণিমা');
     final newMoon = _nextTithi('অমাবস্যা');
     final rashi =
