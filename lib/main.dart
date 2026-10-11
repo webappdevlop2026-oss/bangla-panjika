@@ -37,6 +37,11 @@ final RouteObserver<ModalRoute<void>> routeObserver =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // World clock-এ London/New York/Sydney-এর DST সঠিক রাখতে timezone
+  // database app startup-এই initialize করা হয়। এটি pure Dart এবং web-এও
+  // কাজ করে; notification plugin-এর উপর নির্ভর করে না।
+  tzdata.initializeTimeZones();
+
   // প্রথম ফ্রেম আঁকার আগে শুধু যা না থাকলে UI-ই তৈরি হয় না — সেটুকুই।
   // আগে এখানে নোটিফিকেশন ইঞ্জিন চালু করা, ৩০ দিনের প্রদীপ-রিমাইন্ডার
   // শিডিউল করা (৩১টা প্ল্যাটফর্ম কল!) আর হোম-উইজেট আপডেট — সবই
@@ -9313,26 +9318,26 @@ class _WorldClockScreenState extends State<WorldClockScreen> {
   /// [city]-র প্রকৃত স্থানীয় সময় — মোবাইল/ডেস্কটপে IANA টাইমজোন ডেটাবেস
   /// (DST-সহ real হিসেব) থেকে, ওয়েবে fallback ফিক্সড অফসেট থেকে
   DateTime _localTime(_WorldCity city) {
-    if (!kIsWeb) {
-      try {
-        final loc = tz.getLocation(city.tzId);
-        final t = tz.TZDateTime.now(loc);
-        return DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
-      } catch (_) {}
+    try {
+      final loc = tz.getLocation(city.tzId);
+      final t = tz.TZDateTime.now(loc);
+      return DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
+    } catch (_) {
+      // শুধু timezone database কোনো অপ্রত্যাশিত কারণে unavailable হলে
+      // fixed-offset fallback ব্যবহার হবে।
+      return DateTime.now().toUtc().add(
+        Duration(minutes: (city.fallbackOffset * 60).round()),
+      );
     }
-    return DateTime.now().toUtc().add(
-      Duration(minutes: (city.fallbackOffset * 60).round()),
-    );
   }
 
   double _offsetHours(_WorldCity city) {
-    if (!kIsWeb) {
-      try {
-        final loc = tz.getLocation(city.tzId);
-        return tz.TZDateTime.now(loc).timeZoneOffset.inMinutes / 60.0;
-      } catch (_) {}
+    try {
+      final loc = tz.getLocation(city.tzId);
+      return tz.TZDateTime.now(loc).timeZoneOffset.inMinutes / 60.0;
+    } catch (_) {
+      return city.fallbackOffset;
     }
-    return city.fallbackOffset;
   }
 
   String _bnClock(DateTime dt) {
