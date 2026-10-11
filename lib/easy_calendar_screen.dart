@@ -13,6 +13,8 @@ class _EasyBengaliCalendarScreenState
     extends State<EasyBengaliCalendarScreen>
     with SingleTickerProviderStateMixin {
   DateTime _anchor = DateTime.now();
+  DateTime _lastToday = DateTime.now();
+  Timer? _dayRolloverTimer;
   static const _weekdays = ['রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র', 'শনি'];
 
   late final AnimationController _festivalPulseController;
@@ -24,10 +26,32 @@ class _EasyBengaliCalendarScreenState
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     )..repeat(reverse: true);
+
+    // Keep today's highlight/date correct when the app remains open across
+    // midnight. If the user is browsing another date/month, preserve it.
+    _dayRolloverTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      final now = DateTime.now();
+      final dayChanged =
+          now.year != _lastToday.year ||
+          now.month != _lastToday.month ||
+          now.day != _lastToday.day;
+      if (!dayChanged) return;
+
+      final wasFollowingToday =
+          _anchor.year == _lastToday.year &&
+          _anchor.month == _lastToday.month &&
+          _anchor.day == _lastToday.day;
+      _lastToday = now;
+      setState(() {
+        if (wasFollowingToday) _anchor = now;
+      });
+    });
   }
 
   @override
   void dispose() {
+    _dayRolloverTimer?.cancel();
     _festivalPulseController.dispose();
     super.dispose();
   }
