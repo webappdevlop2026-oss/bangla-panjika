@@ -4910,13 +4910,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen>
                       lat: fallbackLat,
                       lon: fallbackLon,
                     );
-                    final moonAge = PanchangCalculator.moonAgeDays(now);
-                    final moonrise = sun.sunrise.add(
-                      Duration(minutes: (moonAge * 48.8).round()),
+                    final moon = PanchangCalculator.moonTimes(
+                      now,
+                      lat: fallbackLat,
+                      lon: fallbackLon,
                     );
+                    final moonrise = moon['rise'];
                     sunriseTxt = bnTime12(sun.sunrise);
                     sunsetTxt = bnTime12(sun.sunset);
-                    moonriseTxt = bnTime12(moonrise);
+                    moonriseTxt =
+                        moonrise == null ? 'আজ নেই' : bnTime12(moonrise);
                   }
                   return Row(
                     children: [
@@ -34117,7 +34120,11 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                 child: Column(
                   children: [
                     kv('☀️', 'সূর্যোদয়', bnTime12(sun.sunrise)),
-                    kv('🌙', 'চন্দ্রোদয়', bnTime12(moonrise)),
+                    kv(
+                      '🌙',
+                      'চন্দ্রোদয়',
+                      moonrise == null ? 'আজ নেই' : bnTime12(moonrise),
+                    ),
                     kv(
                       '🐍',
                       'রাহুকাল',
@@ -34138,7 +34145,11 @@ class _BengaliCalendarScreenState extends State<BengaliCalendarScreen> {
                 child: Column(
                   children: [
                     kv('🌇', 'সূর্যাস্ত', bnTime12(sun.sunset)),
-                    kv('🌘', 'চন্দ্রাস্ত', bnTime12(moonset)),
+                    kv(
+                      '🌘',
+                      'চন্দ্রাস্ত',
+                      moonset == null ? 'আজ নেই' : bnTime12(moonset),
+                    ),
                     kv(
                       '⚠️',
                       'যমগণ্ড',
@@ -42769,8 +42780,14 @@ class _Phase14AdvancedMoonCenterScreenState
                     spacing: 12,
                     runSpacing: 10,
                     children: [
-                      _moonFact('🌙 চন্দ্রোদয়', bnTime12(moonrise)),
-                      _moonFact('🌗 চন্দ্রাস্ত', bnTime12(moonset)),
+                      _moonFact(
+                        '🌙 চন্দ্রোদয়',
+                        moonrise == null ? 'আজ নেই' : bnTime12(moonrise),
+                      ),
+                      _moonFact(
+                        '🌗 চন্দ্রাস্ত',
+                        moonset == null ? 'আজ নেই' : bnTime12(moonset),
+                      ),
                       _moonFact(
                         '🌕 পরের পূর্ণিমা',
                         full == null
