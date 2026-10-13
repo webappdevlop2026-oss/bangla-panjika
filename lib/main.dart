@@ -699,10 +699,11 @@ class TempleStore {
 /// এই রূপান্তর ছাড়া সূর্যাস্ত ৫:৪৮-এর "সন্ধ্যা প্রদীপ" রিমাইন্ডার রাত
 /// ১১:১৮-তে বাজত (৫:৪৮ + ৫:৩০)। ঠিক এই বাগটাই লাইভ অ্যাপে ধরা পড়েছিল।
 ///
-/// এখানে ঘড়ির অঙ্কগুলো নিয়ে নতুন করে একটা স্থানীয় DateTime বানানো হয়,
-/// তাই ফোনের নিজের টাইমজোন অনুযায়ী মুহূর্তটা ঠিক জায়গায় বসে।
-DateTime panchangInstant(DateTime t) =>
-    DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
+/// UTC-tagged পঞ্চাঙ্গ মানের ঘড়ির অঙ্ক IST; আগে প্রকৃত UTC মুহূর্তে,
+/// তারপর ফোনের স্থানীয় সময়ে রূপান্তর করতে হবে। স্থানীয় মান অপরিবর্তিত।
+DateTime panchangInstant(DateTime t) => t.isUtc
+    ? t.subtract(const Duration(hours: 5, minutes: 30)).toLocal()
+    : t;
 
 class NotificationService {
   NotificationService._();
@@ -16318,6 +16319,7 @@ class PanchangCalculator {
       for (int i = 0; i < 20; i++) {
         final mid = DateTime.fromMillisecondsSinceEpoch(
           (known.millisecondsSinceEpoch + unknown.millisecondsSinceEpoch) ~/ 2,
+          isUtc: moment.isUtc,
         );
         if (tithiFor(mid).index == idx) {
           known = mid;
@@ -16397,6 +16399,7 @@ class PanchangCalculator {
       for (int i = 0; i < 24; i++) {
         final mid = DateTime.fromMillisecondsSinceEpoch(
           (loT.millisecondsSinceEpoch + hiT.millisecondsSinceEpoch) ~/ 2,
+          isUtc: loT.isUtc,
         );
         final v = f(mid);
         if (rising ? v >= 0 : v <= 0) {
